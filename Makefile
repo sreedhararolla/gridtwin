@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types demo data chaos ledger backtest train insights
+.PHONY: setup up down logs check test test-e2e types demo demo-full data chaos ledger backtest train insights
 
 SCENARIO ?= worker-kill
 
@@ -40,6 +40,13 @@ demo:
 	docker compose up -d --build
 	uv run python scripts/wait_for_health.py
 	uv run python -m gridtwin.replay.cli $(if $(DAY),--day $(DAY),)
+
+# The video's scenario: worker kill, partition, duplicates, feed outage on the top spike
+# day. Prints the Scenario Report and SLO table; exits non-zero if any SLO is missed.
+demo-full:
+	docker compose up -d --build
+	uv run python scripts/wait_for_health.py
+	uv run python -m gridtwin.chaos.cli demo-full
 
 # Scripted Chaos Scenario against the running stack: make chaos SCENARIO=worker-kill
 chaos:

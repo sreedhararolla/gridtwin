@@ -1,3 +1,7 @@
+# Pinned so the chaos controller finds its containers from a clone in any folder
+# (COMPOSE_PROJECT_NAME still overrides it).
+name: gridtwin
+
 x-app-env: &app-env
   POSTGRES_DSN: postgresql://gridtwin:gridtwin@postgres:5432/gridtwin
   NATS_URL: nats://nats:4222

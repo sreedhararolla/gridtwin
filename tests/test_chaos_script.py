@@ -25,6 +25,25 @@ def test_worker_kill_script_parses():
     )
 
 
+def test_demo_full_script_runs_the_video_faults_in_order_one_at_a_time():
+    script = parse_script(Path("scenarios/demo-full.yaml").read_text())
+    assert script.fixture == "data/fixtures/rtm_spp_lz_houston_2026-01-28.csv"  # no cache needed
+    assert [s.apply for s in script.steps] == [
+        "worker-kill",
+        "partition",
+        "duplicate-commands",
+        "feed-outage",
+    ]
+    assert script.steps[0].at_interval == 4  # the 7:00 AM CT peak
+    assert script.steps[1].pct == 0.2
+    for before, after in zip(script.steps, script.steps[1:], strict=False):
+        assert before.at_interval + before.for_intervals < after.at_interval  # no overlap
+    last = script.steps[-1]
+    assert script.window.intervals is not None
+    # The ladder needs clean intervals after the outage to climb back to L0 inside the window.
+    assert last.at_interval + last.for_intervals + 2 <= script.window.intervals
+
+
 def test_defaults_are_the_whole_day_and_no_steps():
     script = parse_script("name: calm")
     assert script.steps == []

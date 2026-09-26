@@ -1,21 +1,145 @@
 # GridTwin
 
 A fault-tolerant VPP dispatch orchestrator. GridTwin replays real, post-RTC+B ERCOT
-data to drive a simulated fleet of Base Power batteries on Temporal, and demonstrates
-resilience under injected failures.
+prices through a production-shaped pipeline: a validated market feed, an LP planner,
+durable Temporal workflows, and sharded NATS dispatch to 2,000 simulated Base Core home
+batteries. Every Command is recorded in an idempotent Postgres ledger. It then breaks
+things on purpose, on the top spike day of the year: it kills a worker at the
+$1,284/MWh peak, partitions 20 % of the fleet, duplicates every Command and cuts the
+price feed. Throughout, it shows on a live dashboard that the fleet still delivers its
+target with zero reserve violations and zero duplicate effects. Why it matters: after
+RTC+B, **the top 1 % of intervals hold 28 % of a fleet's value**, so reliability during
+spikes is where the money is.
+
+![Live tab during make demo-full: worker killed at the 7:00 AM peak, recovered in 0.3 s](docs/img/live.png)
+
+![Insights tab: value concentration and the downtime-cost heatmap](docs/img/insights.png)
 
 ## Quickstart
 
 ```
-make setup   # installs uv, Python 3.12, Node.js, gh and gets Docker running (no manual installs)
-make up      # builds and starts every service
+make setup       # installs uv, Python 3.12, Node.js, gh and gets Docker running (no manual installs)
+make up          # builds and starts every service
+make demo-full   # the video's scenario: 4 faults on the top spike day, ~10 min, prints the SLO table
 ```
 
 Then open:
-- **Dashboard:** http://localhost:3000
+- **Dashboard:** http://localhost:3000 (Live, Data and Insights tabs)
 - **Temporal UI:** http://localhost:8080
 
-`make down` stops everything. `make logs` tails all service logs.
+`make down` stops everything. `make logs` tails all service logs. `make demo-full` runs
+on a checked-in real-day fixture, so a fresh clone needs no ERCOT download.
+`DEMO_SCRIPT.md` is the 5-minute video script.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph DATA[Market data - real ERCOT, cached]
+    ING[Ingest CLI<br/>ERCOT MIS / Open-Meteo] --> CACHE[(Parquet + DuckDB)]
+  end
+  subgraph DECIDE[Decision]
+    FEED[Replay Feed<br/>validator + circuit breaker] --> RISK[Scarcity-Risk Model]
+    RISK --> PLAN[Planner<br/>naive / LP / LP+risk]
+  end
+  subgraph ORCH[Orchestration - Temporal]
+    RUN[ReplayRunWorkflow] --> INT[MarketIntervalWorkflow<br/>one per interval]
+    INT --> ACT[20 Shard dispatch activities<br/>retries + heartbeats]
+  end
+  subgraph FLEET[Simulated fleet - 2,000 Devices]
+    SIMA[Fleet simulator A<br/>shards 0-9]
+    SIMB[Fleet simulator B<br/>shards 10-19]
+  end
+  CACHE --> FEED
+  PLAN --> INT
+  ACT -->|Command batches, NATS req/reply| SIMA
+  ACT -->|Command batches, NATS req/reply| SIMB
+  SIMA -->|Heartbeats| TEL[Telemetry ingester]
+  SIMB -->|Heartbeats| TEL
+  ACT --> PG[(Postgres<br/>Command Ledger, Interval Results, chaos events)]
+  TEL --> PG
+  PG --> API[FastAPI + SSE] --> UI[Next.js dashboard]
+  UI -->|chaos buttons| CHAOS[Chaos controller]
+  CHAOS -.->|kill / partition / delay / duplicate / feed faults| ACT
+  CHAOS -.-> SIMA
+  CHAOS -.-> FEED
+```
+
+Each 15-minute Market Interval is one Temporal workflow. It reads a validated Market
+Snapshot, plans a fleet MW target and splits it into per-Device Setpoints by SoC and
+Headroom. It then dispatches one activity per Shard, reallocates any Shortfall and writes
+an Interval Result. Workflows are deterministic; all IO lives in activities.
+
+## What's real vs simulated
+
+| Real | Simulated |
+|---|---|
+| ERCOT RT Settlement Point Prices (`NP6-905-CD` / `NP6-785-ER`) and DAM SPP, post-RTC+B, Dec 5, 2025 → Sep 25, 2026, `LZ_HOUSTON` | The 2,000 Base Core batteries (39.2 kWh, 10 kW placeholder rating), their SoC physics, response noise and faults |
+| Open-Meteo hourly temperatures | Heartbeats and Acks, produced by two simulator processes over NATS |
+| Temporal durable execution, retries and heartbeats; NATS transport; Postgres ledger | Time: the Replay Clock runs at 60x, so an interval takes 15 s of wall time |
+| Worker kills (a real SIGKILL through the Docker API) and the Temporal retry that follows | Partition, telemetry delay and duplicates are injected in the simulators, not a real network |
+| The LP planner, backtest, scarcity-risk model and insights, all computed on the real prices | Market settlement: nothing is bid or settled with ERCOT; "value" is price × MW × time |
+
+The fixtures in `data/fixtures/` are for tests and the clean-clone demo:
+`rtm_spp_lz_houston_2026-01-28.csv` is the real #1 spike day, and
+`rtm_spp_lz_houston_2025-12-10.csv` is a labelled placeholder (ADR-007). `docs/DATA.md`
+lists every dataset, its source and its caveats.
+
+## Design decisions
+
+The full list, with the reasoning, is in [`docs/DECISIONS.md`](docs/DECISIONS.md). The ones
+that shape the demo:
+- **Temporal for orchestration** (ADR-001), with one workflow per Market Interval and one
+  activity per Shard, so a killed worker costs a retry, not an interval (ADR-010).
+- **Exactly-once effects** through device-side dedupe on the Idempotency Key and a
+  Command Ledger (ADR-011).
+- **Fleet State from telemetry**: Stale Devices leave the plan, Unresponsive Devices are
+  re-rated out of the Achievable Target, and a Reallocation Reserve gives any Shortfall
+  somewhere to go (ADR-009, ADR-012).
+- **Degradation Ladder** with a feed validator and circuit breaker inside the workflow
+  (ADR-013).
+- **LP on the DAM price**, scored honestly against perfect foresight (ADR-014); the
+  scarcity-risk model is a monitor until it earns its keep (ADR-015).
+- **Two test seams only**: the Scenario Report (system level) and the pure domain (ADR-005).
+
+## SLO results
+
+`make demo-full` (`scenarios/demo-full.yaml`): Jan 28, 2026, `LZ_HOUSTON`, 6:00 AM → 4:00 PM
+CT (40 intervals), 2,000 Devices, with a worker kill at the 7:00 AM peak, a 20 % partition,
+duplicate Commands and a 6-interval feed outage.
+
+| SLO | Target | Actual (run `chaos-demo-full-1ccc87`) |
+|---|---|---|
+| Within tolerance of the Achievable Target | ≥ 95 % of intervals (±5 %) | 100.0 % (40 / 40) |
+| Reserve violations | 0 | 0 |
+| Duplicate effects | 0 | 0 (15,900 duplicate deliveries) |
+| Missed intervals | 0 | 0 |
+| Recovery time | ≤ 15 s | 0.3 s |
+
+Along the way: 400 Devices went stale under the partition (online bottomed out at 1,600,
+all out of Fleet State), and the ladder went L0 → L1 → L2 during the feed outage and back to
+L0 once the feed was clean. Dispatch latency was 731 ms p50 and 1,178 ms p99 against a
+15 s interval budget. The kill lands on whichever Shard dispatch is in flight. If that
+activity was about to finish, the interval can complete without a Temporal retry, as in
+this run. `make chaos SCENARIO=worker-kill` shows a retry (`attempt: 2`) in the Temporal UI.
+
+Benchmarks (throughput, p99 latency, 1k → 20k Devices) belong to ticket 12, which has not
+shipped; see [Status](#status).
+
+## Documentation
+
+- [`docs/DATA.md`](docs/DATA.md): datasets, sources, the cache and its audit.
+- [`docs/MODEL.md`](docs/MODEL.md): the scarcity-risk model and its validation.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): design decisions (ADR-lite).
+- `docs/BENCHMARKS.md`: not written yet; it comes with ticket 12 (P2, not shipped).
+- [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md): the 5:00 video script with on-screen cues.
+- [`CONTEXT.md`](CONTEXT.md): the domain language. [`docs/SPEC.md`](docs/SPEC.md): the spec.
+
+## Status
+
+[`docs/PROGRESS.md`](docs/PROGRESS.md) tracks every ticket. Everything except these is done:
+- **12 Scale + benchmarks** (P2): not shipped, so there is no `make bench` or BENCHMARKS.md.
+- **14 Storm mode** (stretch): not shipped.
 
 ## What's running
 
@@ -160,6 +284,7 @@ make chaos SCENARIO=partition     # 20 % of devices dark: within tolerance of ac
 make chaos SCENARIO=telemetry-delay  # late heartbeats: stale, de-rated, 0 violations
 make chaos SCENARIO=feed-outage   # feed raises: ladder L0 -> L1 -> L2, then back to L0
 make chaos SCENARIO=feed-outlier  # $9,999 price: snapshot rejected, nothing dispatched on it
+make demo-full                    # all four video faults in one run (= make chaos SCENARIO=demo-full)
 make test-e2e                     # the same scenarios as compose-mode tests with SLO asserts
 ```
 

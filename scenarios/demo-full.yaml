@@ -1,0 +1,28 @@
+# The video's chaos beat on the top spike day (Jan 28, 2026, LZ_HOUSTON, $1,284.81/MWh at
+# 7:00 AM CT): a worker kill at the peak, a 20% partition, duplicate Command batches, then
+# an ERCOT feed outage. One fault at a time, each cleared before the next.
+# Run: make up && make demo-full (about 10 minutes at 60x). Uses the checked-in fixture,
+# so a clean clone needs no ERCOT download.
+name: demo-full
+description: Worker kill at the peak, 20% partition, duplicates, feed outage; every SLO must pass.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2026-01-28.csv
+window:
+  from_interval: 24 # 6:00 AM CT, the run-up to the peak
+  intervals: 40 # through 4:00 PM CT; room for the faulted intervals inside the >= 95 % SLO
+steps:
+  - at_interval: 4 # 7:00 AM CT, the peak: kill the worker running a Shard dispatch
+    apply: worker-kill
+    for_intervals: 2
+  - at_interval: 9 # 8:15 AM CT: 20% of Devices go dark
+    apply: partition
+    pct: 0.2
+    for_intervals: 6
+    at_offset_s: 12 # ~2 s before the decision, while they still look online
+  - at_interval: 18 # 10:30 AM CT: every batch delivered twice, old batches replayed
+    apply: duplicate-commands
+    for_intervals: 6
+  - at_interval: 27 # 12:45 PM CT: the ERCOT feed raises; the ladder steps down and recovers
+    apply: feed-outage
+    for_intervals: 6
+    at_offset_s: 5
