@@ -8,6 +8,19 @@ x-app-env: &app-env
   SIMULATOR_REPLICAS: "2"
   HEARTBEAT_INTERVAL_SECONDS: "1"
   HEARTBEAT_STALE_SECONDS: "5"
+  TASK_QUEUE: gridtwin-dispatch
+  SETTLEMENT_POINT: LZ_HOUSTON
+  FIXTURE_PATH: data/fixtures/rtm_spp_lz_houston_2025-12-10.csv
+  REPLAY_SPEED: "60"
+  DEVICE_COUNT: "10"
+  DEVICE_ENERGY_KWH: "39.2"
+  DEVICE_MAX_POWER_KW: "10.0"
+  DEVICE_ROUND_TRIP_EFFICIENCY: "0.9"
+  RESERVE_FLOOR_PCT: "0.20"
+  INITIAL_SOC_PCT: "0.50"
+  NAIVE_DISCHARGE_THRESHOLD_USD: "90.0"
+  NAIVE_CHARGE_THRESHOLD_USD: "20.0"
+  DISPATCH_TIMEOUT_SECONDS: "5.0"
 
 services:
   postgres:
@@ -99,6 +112,8 @@ services:
     environment:
       <<: *app-env
       INSTANCE_ID: simulator-a
+      # Ticket 02 has one shard; ticket 04 spreads shards across both simulators.
+      SHARD_IDS: shard-0
     depends_on:
       postgres:
         condition: service_healthy

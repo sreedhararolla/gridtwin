@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types
+.PHONY: setup up down logs check test test-e2e types demo
 
 setup:
 	bash scripts/bootstrap.sh
@@ -32,3 +32,8 @@ types:
 types-check:
 	$(MAKE) types
 	git diff --exit-code -- web/src/types/api.ts
+
+demo:
+	docker compose up -d --build
+	uv run python scripts/wait_for_health.py
+	uv run python -m gridtwin.replay.cli

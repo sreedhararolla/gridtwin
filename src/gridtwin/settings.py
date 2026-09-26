@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     fixture_path: str = "data/fixtures/rtm_spp_lz_houston_2025-12-10.csv"
     replay_speed: float = 60.0
 
+    # The one shard ticket 02 dispatches to. Ticket 04 spreads many shards across
+    # simulator replicas; `shard_ids` (plural) is which of those a simulator hosts.
+    shard_id: str = "shard-0"
+    shard_ids: str = ""
     device_count: int = 10
     device_energy_kwh: float = 39.2
     device_max_power_kw: float = 10.0
@@ -42,6 +46,14 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def shard_id_list(self) -> list[str]:
+        return [shard.strip() for shard in self.shard_ids.split(",") if shard.strip()]
+
+    @property
+    def device_ids(self) -> list[str]:
+        return [f"battery-{i}" for i in range(self.device_count)]
 
 
 settings = Settings()

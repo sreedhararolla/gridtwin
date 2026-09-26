@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from gridtwin.api import runs
 from gridtwin.api.health import gather_health
 from gridtwin.api.models import HealthResponse
 from gridtwin.settings import settings
@@ -25,3 +26,6 @@ async def health(response: Response) -> HealthResponse:
     if not result.ok:
         response.status_code = 503
     return result
+
+
+app.include_router(runs.router)

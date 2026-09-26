@@ -1,0 +1,35 @@
+"""NATS core request/reply transport (ADR-002): one request per shard batch."""
+
+from __future__ import annotations
+
+import json
+
+import nats
+from nats.aio.client import Client as NatsClient
+
+from gridtwin.fleet.models import Ack, Command
+
+
+def shard_subject(shard_id: str) -> str:
+    return f"dispatch.{shard_id}"
+
+
+class NatsTransport:
+    def __init__(self, nc: NatsClient) -> None:
+        self._nc = nc
+
+    @classmethod
+    async def connect(cls, url: str) -> NatsTransport:
+        nc = await nats.connect(url)
+        return cls(nc)
+
+    async def send_batch(
+        self, shard_id: str, commands: list[Command], timeout_seconds: float
+    ) -> list[Ack]:
+        payload = json.dumps([c.model_dump(mode="json") for c in commands]).encode()
+        msg = await self._nc.request(shard_subject(shard_id), payload, timeout=timeout_seconds)
+        raw = json.loads(msg.data.decode())
+        return [Ack.model_validate(a) for a in raw]
+
+    async def close(self) -> None:
+        await self._nc.close()
