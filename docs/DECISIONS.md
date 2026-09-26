@@ -74,3 +74,22 @@ It keeps the same interface as the full model.
 **lp_risk.** The LP gets an optional planning-only value on stored energy (the soft holdback) and plans on DAM + p × premium. With no curve it plans as `lp`. In the backtest it re-plans hourly. It scored below `lp` on the window, and MODEL.md reports that result rather than tuning on the test period.
 
 **Web.** The Risk Curve gets its own colour (yellow) on the Live chart and the Insights bars. Realized spikes are price-coloured markers, because red stays reserved for violations and errors.
+
+## ADR-016: Insights: Opportunity, the headline cell, SVG exports, forecast error deferred
+Ticket 11.
+
+**Pure analyses.** `insights/analysis.py` is pure and a Seam B test covers it on the two fixture days. `insights/report.py` (`make insights`) does the IO. It reads every cached real rt_spp interval for the Settlement Point in one DuckDB scan, which takes under 1 s for 295 days. It then writes `data/cache/insights/insights.json` (served by `GET /insights/report`) and the CSVs from the same report object.
+
+**Trading day and hours.** The trading day and the hour of day are Central time. The day median is taken over that trading day's intervals.
+
+**Top N%** uses ⌈N% × intervals⌉ intervals, with a minimum of one.
+
+**Headline.** The ticket's demo line names "7 PM in August". We don't hardcode a cell. The headline quotes whichever hour × month cell has the highest mean $/min. On the cached window that is 8 PM in April 2026 ($20/min mean, $105/min p95), so the headline says that.
+
+**Downtime cost** assumes a minute of outage forfeits 1/15 of the interval's Opportunity. That is an upper-bound-style expectation, because it treats the fleet as able to capture the full excess over the day median.
+
+**Exports are SVG, not PNG.** The ticket asks for "CSV/PNG". PNG would need a plotting dependency (matplotlib) that nothing else uses. The heatmap is already a small SVG, so we export it as `downtime_heatmap.svg`, which renders in the README on GitHub. The tab's chart is the same SVG drawn live.
+
+**Forecast error vs price is deferred.** It needs net-load forecast history (`load_forecast_vintages`, credential-gated, plus `load_actual`). Neither is cached. The report carries `forecast_error.available=false` with the reason, and the tab shows "needs ERCOT keys", as the ticket allows. The scatter itself is not built yet, and no test covers it.
+
+**Regime comparison.** Concentration is computed per `regime`. Pre-RTC+B rows appear as a second row only when they are cached. The heatmap and headline are post-RTC+B only.

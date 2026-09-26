@@ -81,6 +81,42 @@ solve takes 17.5 ms p50 and 30.8 ms max, against a 200 ms budget.
   left at day end is valued at the day's median DAM price for every Strategy alike.
 - See ADR-014 in `docs/DECISIONS.md`.
 
+## Insights: what most people miss
+
+```
+make insights                         # from the cache in < 1 s; writes data/cache/insights/
+```
+
+The Insights page leads with the headline, which `make insights` computes from the cache:
+**"Top 1% of intervals hold 28% of the value; a minute of downtime at 8 PM in Apr 2026
+costs $20 on average (p95 $105)."** The numbers below are for `LZ_HOUSTON`, 2025-12-05 →
+2026-09-25 (post-RTC+B, 28,316 intervals, 295 days) and the 2,000-Device, 20 MW fleet.
+
+| Value concentration | Share of window value |
+|---|---|
+| Top 1% of intervals (284) | 28.2% |
+| Top 5% of intervals (1,416) | 52.6% |
+| Top 10 days (of 295) | 23.8% |
+
+**Definitions.**
+- **Opportunity** of a Market Interval = fleet MW × max(0, RT SPP − that Central-time
+  trading day's median RT SPP) × 0.25 h, in $. It is what the fleet could earn by
+  discharging into that interval rather than at a typical price that day.
+- **Top N% share** = Opportunity in the ⌈N% × intervals⌉ highest-Opportunity intervals ÷
+  the window's total Opportunity. **Top 10 days** = the same, summing Opportunity per day.
+- **Downtime cost** ($/min) = Opportunity ÷ 15: a minute of dispatch outage loses 1/15 of
+  its interval's Opportunity. The heatmap shows each hour of day (CT) × month as the mean
+  and the p95 (linear interpolation) over that cell's intervals. The headline quotes the
+  cell with the highest mean.
+
+The same tables are exported as CSV (`concentration_top_intervals.csv`,
+`concentration_curve.csv`, `concentration_top_days.csv`, `downtime_heatmap.csv`), and the
+heatmap as `downtime_heatmap.svg`. A Seam B test checks that the CSVs match the report the
+tab reads. Pre- vs post-RTC+B concentration appears automatically once pre-RTC+B days are
+cached (`MARKETDATA_INCLUDE_PRE_RTCB=true`). The forecast-error-vs-price scatter needs
+net-load forecast history, which requires the ERCOT API keys, so without them the tab says
+"needs ERCOT keys". See ADR-016.
+
 ## Chaos
 
 During a replay, press **Kill worker** in the Live page's chaos panel. The chaos

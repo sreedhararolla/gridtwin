@@ -47,3 +47,6 @@ Use these nouns in code, commits, UI labels and the video. If a new concept appe
 | **Duplicate Effect** | A Device acting on the same key twice (must be 0). |
 | **Interval Result** | Per-interval record: target, achievable, delivered, level, counts, latency. |
 | **Scenario Report** | SLO summary of a run. The system-level test seam. |
+| **Opportunity** | Fleet MW × max(0, RT SPP − that trading day's median RT SPP) × 0.25 h: an interval's discharge value over a typical price that day. |
+| **Value Concentration** | Share of a window's Opportunity in its top 1% / 5% of intervals and top 10 days. |
+| **Downtime Cost** | Expected $ lost per minute of dispatch outage = Opportunity ÷ 15, by hour of day (CT) × month, mean and p95. |
