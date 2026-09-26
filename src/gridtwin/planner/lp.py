@@ -62,20 +62,29 @@ def terminal_value(prices: list[float]) -> float:
 
 
 def solve(
-    prices: list[float], fleet: FleetAggregate, config: LpConfig, end_value: float
+    prices: list[float],
+    fleet: FleetAggregate,
+    config: LpConfig,
+    end_value: float,
+    holdback_usd_per_mwh_h: list[float] | None = None,
 ) -> Schedule:
-    """The optimal schedule for `prices` (one per Market Interval)."""
+    """The optimal schedule for `prices` (one per Market Interval). `holdback_usd_per_mwh_h`
+    (lp_risk) is a planning-only value per MWh stored through each interval: a soft SoC
+    holdback. It is not part of the settled value."""
     n = len(prices)
     if n == 0:
         return Schedule(charge_mw=[], discharge_mw=[], energy_mwh=[])
     dt = INTERVAL_HOURS
     p = np.asarray(prices, dtype=float)
+    holdback = np.zeros(n)
+    if holdback_usd_per_mwh_h:
+        holdback[: len(holdback_usd_per_mwh_h)] = holdback_usd_per_mwh_h[:n]
     # Variables: [c_0..c_{n-1}, d_0..d_{n-1}, e_0..e_{n-1}]; linprog minimises.
     cost = np.concatenate(
         [
             (p + CHARGE_WEAR_USD_PER_MWH) * dt,
             -(p - config.degradation_usd_per_mwh) * dt,
-            np.zeros(n),
+            -holdback * dt,
         ]
     )
     cost[-1] -= end_value
@@ -184,23 +193,55 @@ def aggregate_of(fleet_state: FleetState) -> FleetAggregate:
     )
 
 
+def expected_prices(
+    forecast: list[float], p_spike: list[float], spike_premium_usd: float
+) -> list[float]:
+    """lp_risk's price: forecast + p(spike) x mean spike premium, where the Risk Curve
+    covers the horizon (it is shorter than the plan; beyond it the forecast stands)."""
+    return [
+        price + (p_spike[t] * spike_premium_usd if t < len(p_spike) else 0.0)
+        for t, price in enumerate(forecast)
+    ]
+
+
+def holdback_values(p_spike: list[float], config: LpConfig) -> list[float]:
+    """The soft SoC holdback: stored energy is worth `holdback_usd_per_mwh_h` x the peak
+    spike probability over the next `holdback_lookahead_intervals`, so the plan keeps
+    charge ahead of high-risk intervals without a hard constraint."""
+    k = config.holdback_lookahead_intervals
+    return [
+        config.holdback_usd_per_mwh_h * max(p_spike[t + 1 : t + 1 + k], default=0.0)
+        for t in range(len(p_spike))
+    ]
+
+
 def lp_strategy(
     fleet_state: FleetState,
     forecast_usd_per_mwh: list[float],
     config: LpConfig,
     forecast_source: str = "",
+    p_spike: list[float] | None = None,
+    spike_premium_usd: float = 0.0,
 ) -> FleetPlan:
     """Rolling horizon: solve over the forecast from this interval on, act on the first
-    interval only, and clip it to this interval's headroom."""
+    interval only, and clip it to this interval's headroom. With a Risk Curve (`p_spike`)
+    this is the `lp_risk` Strategy."""
+    strategy = "lp_risk" if p_spike is not None else "lp"
     horizon = forecast_usd_per_mwh[: config.horizon_intervals]
     if not horizon or fleet_state.capacity_mwh <= 0:
-        return FleetPlan(target_mw=0.0, strategy="lp", forecast_source=forecast_source)
-    schedule = solve(horizon, aggregate_of(fleet_state), config, terminal_value(horizon))
+        return FleetPlan(target_mw=0.0, strategy=strategy, forecast_source=forecast_source)
+    end_value = terminal_value(horizon)
+    holdback = None
+    if p_spike is not None:
+        horizon = expected_prices(horizon, p_spike, spike_premium_usd)
+        holdback = holdback_values(p_spike, config)
+    schedule = solve(horizon, aggregate_of(fleet_state), config, end_value, holdback)
     target = schedule.target_mw[0]
     target = min(max(target, -fleet_state.charge_headroom_mw), fleet_state.discharge_headroom_mw)
     return FleetPlan(
         target_mw=target,
-        strategy="lp",
+        strategy=strategy,
         horizon_mw=[round(mw, 3) for mw in schedule.target_mw],
         forecast_source=forecast_source,
+        risk_curve=[round(p, 4) for p in p_spike or []],
     )

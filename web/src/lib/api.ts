@@ -15,6 +15,17 @@ export type Strategy = NonNullable<components["schemas"]["StartRunRequest"]["str
 export type BacktestReport = components["schemas"]["BacktestReport"];
 export type StrategySummary = components["schemas"]["StrategySummary"];
 export type DayResult = components["schemas"]["DayResult"];
+export type RiskDay = components["schemas"]["RiskDay"];
+
+// null = no Risk Curve for that day (`make train` has not been run, or the day is not cached).
+export async function fetchRiskDay(day: string): Promise<RiskDay | null> {
+  const res = await fetch(`${API_BASE_URL}/risk/day?${new URLSearchParams({ day })}`, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`risk day failed: ${res.status}`);
+  return (await res.json()) as RiskDay;
+}
 
 export async function fetchLedger(runId: string): Promise<LedgerIntervalSummary[]> {
   const res = await fetch(`${API_BASE_URL}/runs/${encodeURIComponent(runId)}/ledger`, {

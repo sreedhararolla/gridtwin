@@ -18,11 +18,13 @@ import { fetchBacktest, type BacktestReport, type DayResult } from "@/lib/api";
 const STRATEGY_COLORS: Record<string, string> = {
   naive: "#94a3b8",
   lp: "#2dd4bf",
+  lp_risk: "#fde047", // the Risk Curve's colour on the Live tab
   perfect_foresight: "#e2e8f0",
 };
 const STRATEGY_LABELS: Record<string, string> = {
   naive: "naive",
   lp: "lp",
+  lp_risk: "lp + risk",
   perfect_foresight: "perfect foresight",
 };
 const DAYS_PER_MONTH = 365.25 / 12;
@@ -65,6 +67,7 @@ function worstLpDays(days: DayResult[], n: number) {
       day,
       naive: v.naive ?? 0,
       lp: v.lp ?? 0,
+      lp_risk: v.lp_risk ?? 0,
       perfect_foresight: v.perfect_foresight ?? 0,
     }))
     .sort((a, b) => b.perfect_foresight - b.lp - (a.perfect_foresight - a.lp))
@@ -177,6 +180,7 @@ export function BacktestView() {
               <th className="py-1 font-medium">Day</th>
               <th className="py-1 text-right font-medium">naive ($)</th>
               <th className="py-1 text-right font-medium">lp ($)</th>
+              <th className="py-1 text-right font-medium">lp + risk ($)</th>
               <th className="py-1 text-right font-medium">perfect foresight ($)</th>
             </tr>
           </thead>
@@ -186,6 +190,7 @@ export function BacktestView() {
                 <td className="py-1">{d.day}</td>
                 <td className="py-1 text-right">{usd(d.naive)}</td>
                 <td className="py-1 text-right">{usd(d.lp)}</td>
+                <td className="py-1 text-right">{usd(d.lp_risk)}</td>
                 <td className="py-1 text-right">{usd(d.perfect_foresight)}</td>
               </tr>
             ))}

@@ -16,12 +16,17 @@ from gridtwin.planner.lp import (
     FleetAggregate,
     LpConfig,
     Schedule,
+    expected_prices,
+    holdback_values,
     schedule_value,
     solve,
     terminal_value,
 )
 
-STRATEGIES = ("naive", "lp", "perfect_foresight")
+STRATEGIES = ("naive", "lp", "lp_risk", "perfect_foresight")
+REPLAN_EVERY_INTERVALS = 4  # lp_risk re-plans hourly, on the Risk Curve made at that time
+# Interval index in the day -> (Risk Curve from that interval on, mean spike premium $/MWh).
+RiskByInterval = dict[int, tuple[list[float], float]]
 DAYS_PER_MONTH = 365.25 / 12
 
 
@@ -43,9 +48,12 @@ def headroom(fleet: FleetAggregate, energy_mwh: float) -> tuple[float, float]:
     return discharge, charge
 
 
-def _run(fleet: FleetAggregate, policy: Callable[[int, float, float], float | None]) -> Schedule:
-    """Step the aggregate battery: `policy(t, max_discharge, max_charge)` gives the net MW
-    target (None = done), which is clipped to headroom."""
+Policy = Callable[[int, float, float, float], float | None]
+
+
+def _run(fleet: FleetAggregate, policy: Policy) -> Schedule:
+    """Step the aggregate battery: `policy(t, max_discharge, max_charge, energy)` gives the
+    net MW target (None = done), which is clipped to headroom."""
     energy = fleet.energy_mwh
     charge_mw: list[float] = []
     discharge_mw: list[float] = []
@@ -53,7 +61,7 @@ def _run(fleet: FleetAggregate, policy: Callable[[int, float, float], float | No
     t = 0
     while True:
         max_d, max_c = headroom(fleet, energy)
-        target = policy(t, max_d, max_c)
+        target = policy(t, max_d, max_c, energy)
         if target is None:
             break
         d = min(max(target, 0.0), max_d)
@@ -68,7 +76,7 @@ def _run(fleet: FleetAggregate, policy: Callable[[int, float, float], float | No
 
 def execute(targets: list[float], fleet: FleetAggregate) -> Schedule:
     """Run net MW targets through the aggregate battery, clipped to headroom."""
-    return _run(fleet, lambda t, _d, _c: targets[t] if t < len(targets) else None)
+    return _run(fleet, lambda t, _d, _c, _e: targets[t] if t < len(targets) else None)
 
 
 def naive_schedule(
@@ -77,11 +85,43 @@ def naive_schedule(
     """The naive Strategy, interval by interval: full discharge at/above the high threshold,
     full charge at/below the low one (planner/naive.py on the aggregate)."""
 
-    def policy(t: int, max_d: float, max_c: float) -> float | None:
+    def policy(t: int, max_d: float, max_c: float, _energy: float) -> float | None:
         if t >= len(prices):
             return None
         price = prices[t]
         return max_d if price >= discharge_usd else -max_c if price <= charge_usd else 0.0
+
+    return _run(fleet, policy)
+
+
+def lp_risk_schedule(
+    forecast: list[float],
+    risk: RiskByInterval,
+    fleet: FleetAggregate,
+    config: LpConfig,
+    end_value: float,
+) -> Schedule:
+    """The lp_risk Strategy: every hour, re-plan the rest of the day from the current
+    energy on forecast + p(spike) x premium with the soft SoC holdback, using the Risk
+    Curve made at that interval (none known = the plain forecast). With no Risk Curve
+    for the whole day it is exactly `lp`."""
+    if not risk:
+        return execute(solve(forecast, fleet, config, end_value).target_mw, fleet)
+    plan: list[float] = []
+    plan_start = 0
+
+    def policy(t: int, _max_d: float, _max_c: float, energy: float) -> float | None:
+        nonlocal plan, plan_start
+        if t >= len(forecast):
+            return None
+        if t % REPLAN_EVERY_INTERVALS == 0 or not plan:
+            curve, premium = risk.get(t, ([], 0.0))
+            start = fleet.model_copy(update={"energy_mwh": energy})
+            prices = expected_prices(forecast[t:], curve, premium)
+            hold = holdback_values(curve, config)
+            plan = solve(prices, start, config, end_value, hold).target_mw
+            plan_start = t
+        return plan[t - plan_start]
 
     return _run(fleet, policy)
 
@@ -95,13 +135,15 @@ def backtest_day(
     config: LpConfig,
     discharge_usd: float,
     charge_usd: float,
+    risk: RiskByInterval | None = None,
 ) -> list[DayResult]:
-    """All three Strategies on one day. Remaining energy is valued at the forecast's median
-    for every Strategy alike (a price known before the day starts)."""
+    """Every Strategy on one day. Remaining energy is valued at the forecast's median for
+    every Strategy alike (a price known before the day starts)."""
     end_value = terminal_value(forecast)
     schedules = {
         "naive": naive_schedule(actual, fleet, discharge_usd, charge_usd),
         "lp": execute(solve(forecast, fleet, config, end_value).target_mw, fleet),
+        "lp_risk": lp_risk_schedule(forecast, risk or {}, fleet, config, end_value),
         "perfect_foresight": solve(actual, fleet, config, end_value),
     }
     fleet_mw = max(fleet.max_discharge_mw, 1e-9)
@@ -117,7 +159,9 @@ def backtest_day(
                 discharged_mwh=sum(schedule.discharge_mw) * INTERVAL_HOURS,
                 charged_mwh=sum(schedule.charge_mw) * INTERVAL_HOURS,
                 intervals=len(actual),
-                forecast_source=forecast_source,
+                forecast_source=f"{forecast_source}+risk"
+                if strategy == "lp_risk" and risk
+                else forecast_source,
             )
         )
     return results

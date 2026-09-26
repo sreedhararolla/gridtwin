@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     strategy: str = "naive"
     planner_horizon_intervals: int = 96
     planner_degradation_usd_per_mwh: float = 10.0
+    # Scarcity-risk model (ticket 10): `make train` seed, the weather city it reads, and
+    # the `lp_risk` soft SoC holdback ($/MWh per hour held, times the peak spike
+    # probability over the next N intervals).
+    risk_seed: int = 7
+    risk_weather_city: str = "houston"
+    risk_holdback_usd_per_mwh_h: float = 40.0
+    risk_holdback_lookahead_intervals: int = 4
 
     dispatch_timeout_seconds: float = 5.0
     tolerance_pct: float = 0.05
@@ -132,6 +139,8 @@ class Settings(BaseSettings):
         return LpConfig(
             degradation_usd_per_mwh=self.planner_degradation_usd_per_mwh,
             horizon_intervals=self.planner_horizon_intervals,
+            holdback_usd_per_mwh_h=self.risk_holdback_usd_per_mwh_h,
+            holdback_lookahead_intervals=self.risk_holdback_lookahead_intervals,
         )
 
     def reallocation_config(self) -> ReallocationConfig:

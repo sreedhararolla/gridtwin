@@ -231,6 +231,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/risk/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Risk Day */
+        get: operations["get_risk_day_risk_day_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Risk Report */
+        get: operations["get_risk_report_risk_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -291,6 +325,19 @@ export interface components {
             day: string;
             /** Max Rt Price Usd Per Mwh */
             max_rt_price_usd_per_mwh: number;
+        };
+        /** CalibrationBin */
+        CalibrationBin: {
+            /** Lo */
+            lo: number;
+            /** Hi */
+            hi: number;
+            /** Count */
+            count: number;
+            /** Mean Predicted */
+            mean_predicted: number;
+            /** Observed Rate */
+            observed_rate: number;
         };
         /**
          * ChaosEvent
@@ -369,6 +416,25 @@ export interface components {
              * @default
              */
             detail: string;
+        };
+        /** FoldResult */
+        FoldResult: {
+            /** Test Month */
+            test_month: string;
+            /** Provenance */
+            provenance: string;
+            /** Train Rows */
+            train_rows: number;
+            /** Test Rows */
+            test_rows: number;
+            /** Threshold Usd Per Mwh */
+            threshold_usd_per_mwh: number;
+            /** Spike Premium Usd Per Mwh */
+            spike_premium_usd_per_mwh: number;
+            /** Test Positive Rate */
+            test_positive_rate: number;
+            model: components["schemas"]["ScoreCard"];
+            climatology: components["schemas"]["ScoreCard"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -573,6 +639,89 @@ export interface components {
             /** Recovery S */
             recovery_s: number | null;
         };
+        /** RiskDay */
+        RiskDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Settlement Point */
+            settlement_point: string;
+            /** Threshold Usd Per Mwh */
+            threshold_usd_per_mwh: number;
+            /** Provenance */
+            provenance: string;
+            /** Points */
+            points: components["schemas"]["RiskPoint"][];
+        };
+        /** RiskPoint */
+        RiskPoint: {
+            /**
+             * Interval Start
+             * Format: date-time
+             */
+            interval_start: string;
+            /** Rt Price Usd Per Mwh */
+            rt_price_usd_per_mwh: number | null;
+            /** Spike */
+            spike: boolean;
+            /** P Spike 1H Ahead */
+            p_spike_1h_ahead: number | null;
+            /** Curve */
+            curve: number[];
+        };
+        /** RiskReport */
+        RiskReport: {
+            /** Settlement Point */
+            settlement_point: string;
+            /**
+             * Start Day
+             * Format: date
+             */
+            start_day: string;
+            /**
+             * End Day
+             * Format: date
+             */
+            end_day: string;
+            /** Seed */
+            seed: number;
+            /** Quantile */
+            quantile: number;
+            /** Horizon Intervals */
+            horizon_intervals: number;
+            /** Features */
+            features: string[];
+            /** Missing Inputs */
+            missing_inputs: string[];
+            /** Threshold Usd Per Mwh */
+            threshold_usd_per_mwh: number;
+            /** Folds */
+            folds: components["schemas"]["FoldResult"][];
+            /** Walk Forward Rows */
+            walk_forward_rows: number;
+            /** Walk Forward Positive Rate */
+            walk_forward_positive_rate: number;
+            model: components["schemas"]["ScoreCard"];
+            climatology: components["schemas"]["ScoreCard"];
+            /** Brier Skill Vs Climatology */
+            brier_skill_vs_climatology: number;
+            /** Predictions Sha256 */
+            predictions_sha256: string;
+        };
+        /**
+         * ScoreCard
+         * @description One predictor (model or climatology) scored on one set of test rows.
+         */
+        ScoreCard: {
+            /** Brier */
+            brier: number;
+            /** Pr Auc */
+            pr_auc: number | null;
+            /** Calibration */
+            calibration: components["schemas"]["CalibrationBin"][];
+        };
         /** ServiceCount */
         ServiceCount: {
             /** Name */
@@ -609,7 +758,7 @@ export interface components {
             /** Settlement Point */
             settlement_point?: string | null;
             /** Strategy */
-            strategy?: ("naive" | "lp") | null;
+            strategy?: ("naive" | "lp" | "lp_risk") | null;
         };
         /** StartedRun */
         StartedRun: {
@@ -1026,6 +1175,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BacktestReport"];
+                };
+            };
+        };
+    };
+    get_risk_day_risk_day_get: {
+        parameters: {
+            query: {
+                day: string;
+                settlement_point?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskDay"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_risk_report_risk_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskReport"];
                 };
             };
         };

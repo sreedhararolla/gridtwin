@@ -7,6 +7,7 @@ const SETTLEMENT_POINT = "LZ_HOUSTON";
 const STRATEGIES: { value: Strategy; label: string }[] = [
   { value: "naive", label: "naive (price thresholds)" },
   { value: "lp", label: "lp (DAM-forecast LP)" },
+  { value: "lp_risk", label: "lp_risk (LP + Risk Curve)" },
 ];
 
 // Any-day replay: pick a cached day (spikiest first) and a Strategy, and start a Replay

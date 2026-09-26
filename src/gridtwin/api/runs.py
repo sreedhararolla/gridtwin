@@ -28,7 +28,7 @@ class LatestRun(BaseModel):
 class StartRunRequest(BaseModel):
     day: date | None = None  # a cached day (Central-time trading day); None = fixture day
     settlement_point: str | None = None
-    strategy: Literal["naive", "lp"] | None = None  # None = the STRATEGY setting
+    strategy: Literal["naive", "lp", "lp_risk"] | None = None  # None = the STRATEGY setting
 
 
 class StartedRun(BaseModel):

@@ -22,6 +22,7 @@ from gridtwin.planner.models import FleetPlan, FleetState, LpConfig
 from gridtwin.planner.naive import naive_strategy
 from gridtwin.replay.feed import FeedReading
 from gridtwin.replay.models import MarketSnapshot
+from gridtwin.risk.store import risk_curve
 from gridtwin.telemetry.repo import TelemetryRepo
 from gridtwin.transport.base import Transport
 
@@ -162,8 +163,9 @@ class DispatchActivities:
     ) -> FleetPlan:
         """The Strategy's Fleet Plan. `lp` reads its horizon's price forecast from the cache
         (IO, so here and not in the pure planner); with no forecast at all it falls back to
-        naive, and the plan's `strategy` says so."""
-        if strategy == "lp":
+        naive, and the plan's `strategy` says so. `lp_risk` also reads the Risk Curve made
+        at this interval (`make train`); without one it plans as `lp`."""
+        if strategy in ("lp", "lp_risk"):
             starts = [
                 snapshot.interval_start + timedelta(minutes=INTERVAL_MINUTES * k)
                 for k in range(lp.horizon_intervals)
@@ -171,6 +173,21 @@ class DispatchActivities:
             forecast, source = await asyncio.to_thread(
                 forecast_prices, snapshot.settlement_point, starts, fixture_path
             )
+            curve = None
+            if strategy == "lp_risk":
+                curve = await asyncio.to_thread(
+                    risk_curve, snapshot.settlement_point, snapshot.interval_start
+                )
+            if source != "none" and curve is not None:
+                return await asyncio.to_thread(
+                    lp_strategy,
+                    fleet_state,
+                    forecast,
+                    lp,
+                    f"{source}+risk",
+                    curve.p_spike,
+                    curve.spike_premium_usd_per_mwh,
+                )
             if source != "none":
                 return await asyncio.to_thread(lp_strategy, fleet_state, forecast, lp, source)
         return naive_strategy(fleet_state, snapshot, discharge_threshold_usd, charge_threshold_usd)

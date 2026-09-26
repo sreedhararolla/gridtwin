@@ -108,7 +108,7 @@ class ReplayRunInput(BaseModel):
     reallocation: ReallocationConfig = ReallocationConfig()
     ladder: LadderConfig = LadderConfig()
     guard: FeedGuard = FeedGuard()  # carried across continue-as-new
-    strategy: str = "naive"  # naive | lp
+    strategy: str = "naive"  # naive | lp | lp_risk
     lp: LpConfig = LpConfig()
 
 

@@ -9,6 +9,7 @@ import { FleetReadouts } from "@/components/FleetReadouts";
 import { LedgerSummary } from "@/components/LedgerSummary";
 import { LiveChart } from "@/components/LiveChart";
 import { ReplayPicker } from "@/components/ReplayPicker";
+import { RiskChart } from "@/components/RiskChart";
 import { SocBandChart } from "@/components/SocBandChart";
 import { fetchLatestRun } from "@/lib/api";
 import { useChaos } from "@/lib/useChaos";
@@ -90,6 +91,8 @@ export function LiveView() {
             <h3 className="text-sm font-medium text-slate-400">Command Ledger</h3>
             <LedgerSummary runId={runId} results={results} />
             <LiveChart results={results} chaosEvents={events} />
+            <h3 className="text-sm font-medium text-slate-400">Risk Curve (scarcity risk)</h3>
+            <RiskChart results={results} />
             <h3 className="text-sm font-medium text-slate-400">Fleet SoC (p10 / median / p90)</h3>
             <SocBandChart results={results} />
           </>

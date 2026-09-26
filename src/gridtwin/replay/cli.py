@@ -73,7 +73,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser(prog="gridtwin.replay")
     parser.add_argument("--day", type=date.fromisoformat, default=None)
     parser.add_argument("--settlement-point", default=settings.settlement_point)
-    parser.add_argument("--strategy", choices=["naive", "lp"], default=settings.strategy)
+    parser.add_argument("--strategy", choices=["naive", "lp", "lp_risk"], default=settings.strategy)
     args = parser.parse_args()
 
     run_id = await start_replay_run(

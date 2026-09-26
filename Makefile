@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types demo data chaos ledger backtest
+.PHONY: setup up down logs check test test-e2e types demo data chaos ledger backtest train
 
 SCENARIO ?= worker-kill
 
@@ -55,6 +55,11 @@ data:
 	uv run python -m gridtwin.marketdata.cli backfill-rt-spp
 	uv run python -m gridtwin.marketdata.cli backfill-dam-spp
 
-# Offline strategy backtest (naive vs LP vs perfect foresight) over the cached window.
+# Scarcity-risk model: walk-forward CV vs climatology, out-of-sample Risk Curves (seeded).
+train:
+	uv run python -m gridtwin.risk.train
+
+# Offline strategy backtest (naive vs LP vs LP+risk vs perfect foresight) over the cached
+# window. Run `make train` first for lp_risk's Risk Curves.
 backtest:
 	uv run python -m gridtwin.insights.backtest

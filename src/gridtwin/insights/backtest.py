@@ -1,5 +1,7 @@
-"""`make backtest`: naive vs LP vs perfect foresight over every cached post-RTC+B day, on
-the fleet aggregate, each day from the same starting SoC. Writes a BacktestReport to
+"""`make backtest`: naive vs LP vs LP + Risk Curve vs perfect foresight over every cached
+post-RTC+B day, on the fleet aggregate, each day from the same starting SoC. `lp_risk`
+uses the out-of-sample Risk Curves `make train` stored (without them it plans as `lp`,
+re-planned hourly). Writes a BacktestReport to
 `data/cache/insights/backtest.json` (derived from the cache, so never committed).
 
 uv run python -m gridtwin.insights.backtest [--settlement-point LZ_HOUSTON]
@@ -22,6 +24,7 @@ from gridtwin.planner.backtest import (
     summarize,
 )
 from gridtwin.planner.lp import FleetAggregate, LpConfig, solve, terminal_value
+from gridtwin.risk.store import risk_curve
 from gridtwin.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -72,6 +75,11 @@ def run_backtest(settlement_point: str) -> BacktestReport:
         if source == "none":
             logger.info("skip %s: no forecast (no DAM and no previous RT day)", day)
             continue
+        risk = {}
+        for t, start in enumerate(starts):
+            curve = risk_curve(settlement_point, start)
+            if curve is not None:
+                risk[t] = (curve.p_spike, curve.spike_premium_usd_per_mwh)
         actuals.append(actual)
         results.extend(
             backtest_day(
@@ -83,6 +91,7 @@ def run_backtest(settlement_point: str) -> BacktestReport:
                 config,
                 settings.naive_discharge_threshold_usd,
                 settings.naive_charge_threshold_usd,
+                risk,
             )
         )
     timings = time_solves(actuals, fleet, config)

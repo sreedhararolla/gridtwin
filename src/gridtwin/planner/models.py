@@ -22,6 +22,9 @@ class FleetState(BaseModel, frozen=True):
 class LpConfig(BaseModel, frozen=True):
     degradation_usd_per_mwh: float = 10.0  # per MWh discharged
     horizon_intervals: int = 96
+    # lp_risk (ticket 10): value on stored energy before high-risk intervals.
+    holdback_usd_per_mwh_h: float = 40.0
+    holdback_lookahead_intervals: int = 4
 
 
 class FleetPlan(BaseModel, frozen=True):
@@ -31,3 +34,5 @@ class FleetPlan(BaseModel, frozen=True):
     # prices came from (dam_spp | persistence | mixed). Empty for naive.
     horizon_mw: list[float] = []
     forecast_source: str = ""
+    # lp_risk: the Risk Curve it planned on (spike probability per upcoming interval).
+    risk_curve: list[float] = []
