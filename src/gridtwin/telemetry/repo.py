@@ -54,13 +54,21 @@ class PostgresTelemetryRepo:
     def upsert_heartbeats(self, heartbeats: list[Heartbeat]) -> None:
         if not heartbeats:
             return
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.executemany(
+        # One statement over arrays: executemany costs a round trip per row, which at
+        # 10,000 Devices is slower than the flush period (ticket 12). An upsert may not
+        # touch the same row twice, so keep only the newest Heartbeat per Device.
+        newest = LatestHeartbeats()
+        newest.add(heartbeats)
+        rows = newest.drain()
+        with get_conn() as conn:
+            conn.execute(
                 """
                 INSERT INTO device_telemetry
                     (run_id, device_id, shard_id, soc_pct, energy_kwh, max_power_kw,
                      round_trip_efficiency, reserve_floor_pct, power_mw, healthy, sent_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                SELECT * FROM unnest(%s::text[], %s::text[], %s::text[], %s::float8[],
+                    %s::float8[], %s::float8[], %s::float8[], %s::float8[], %s::float8[],
+                    %s::bool[], %s::timestamptz[])
                 ON CONFLICT (run_id, device_id) DO UPDATE SET
                     soc_pct = EXCLUDED.soc_pct,
                     power_mw = EXCLUDED.power_mw,
@@ -68,22 +76,19 @@ class PostgresTelemetryRepo:
                     sent_at = EXCLUDED.sent_at
                 WHERE device_telemetry.sent_at <= EXCLUDED.sent_at
                 """,
-                [
-                    (
-                        hb.run_id,
-                        hb.state.device_id,
-                        hb.state.shard_id,
-                        hb.state.soc_pct,
-                        hb.state.energy_kwh,
-                        hb.state.max_power_kw,
-                        hb.state.round_trip_efficiency,
-                        hb.state.reserve_floor_pct,
-                        hb.power_mw,
-                        hb.healthy,
-                        hb.sent_at,
-                    )
-                    for hb in heartbeats
-                ],
+                (
+                    [hb.run_id for hb in rows],
+                    [hb.state.device_id for hb in rows],
+                    [hb.state.shard_id for hb in rows],
+                    [hb.state.soc_pct for hb in rows],
+                    [hb.state.energy_kwh for hb in rows],
+                    [hb.state.max_power_kw for hb in rows],
+                    [hb.state.round_trip_efficiency for hb in rows],
+                    [hb.state.reserve_floor_pct for hb in rows],
+                    [hb.power_mw for hb in rows],
+                    [hb.healthy for hb in rows],
+                    [hb.sent_at for hb in rows],
+                ),
             )
 
     def latest(self, run_id: str) -> list[Heartbeat]:

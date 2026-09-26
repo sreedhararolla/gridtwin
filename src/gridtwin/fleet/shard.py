@@ -18,6 +18,10 @@ from gridtwin.fleet.models import Ack, BatchReply, Command, DeviceState, Heartbe
 # Duplicate-commands scenario: besides delivering every batch twice, replay the previous
 # batch before this one on this share of batches.
 OLD_BATCH_REPLAY_RATE = 0.3
+# Idempotency Key memory spans this many Market Intervals (the current one and the one
+# before it, which a replayed old batch or a late retry can still reach).
+RETAINED_INTERVALS = 2
+RETAINED_SPAN = timedelta(minutes=15 * (RETAINED_INTERVALS - 1))
 
 
 class ShardSimulator:
@@ -40,9 +44,14 @@ class ShardSimulator:
         self._reset_memory()
 
     def _reset_memory(self) -> None:
-        self._received: set[str] = set()  # every key delivered to this shard this run
+        # Key memory covers the newest RETAINED_INTERVALS Market Intervals this shard has
+        # seen, so a long run's memory stays flat. A Command from before that window is
+        # answered `expired` and never acts, so it cannot act twice either.
+        self._received: set[str] = set()  # keys delivered to this shard (retained window)
         self._acks: dict[str, Ack] = {}  # key -> the Device's one answer (applied or failed)
         self._effects: Counter[str] = Counter()  # key -> times a Device acted on it
+        self._keys_by_interval: dict[datetime, set[str]] = {}
+        self._newest: datetime | None = None  # newest Market Interval delivered
         self._clock: dict[str, datetime] = {}  # device -> latest interval it acted in
         self._seq: dict[tuple[str, datetime], int] = {}  # (device, interval) -> highest seq
         # (device, interval) -> MW delivered so far in that interval, across seqs
@@ -129,14 +138,42 @@ class ShardSimulator:
         for command in commands:
             if command.device_id in self._partitioned:
                 continue  # never reaches the Device, so no Ack comes back
+            if self._before_window(command.interval_start):
+                acks.append(self._expired(command))
+                continue
+            self._advance(command.interval_start)
             key = command.idempotency_key
             if key in self._received:
                 counts["duplicate_deliveries"] += 1
             self._received.add(key)
+            self._keys_by_interval.setdefault(command.interval_start, set()).add(key)
             acks.append(self._act(command))
             if self._effects[key] > 1:
                 counts["duplicate_effects"] += 1
         return acks
+
+    def _before_window(self, interval_start: datetime) -> bool:
+        return self._newest is not None and interval_start < self._newest - RETAINED_SPAN
+
+    def _expired(self, command: Command) -> Ack:
+        state = self._devices.get(command.device_id)
+        if state is None or command.run_id != self._run_id:
+            return self._act(command)  # the not-in-this-run `failed` Ack
+        return ignored_ack(state, command, "expired")
+
+    def _advance(self, interval_start: datetime) -> None:
+        """A newer Market Interval arrived: forget keys older than the retained window."""
+        if self._newest is not None and interval_start <= self._newest:
+            return
+        self._newest = interval_start
+        cutoff = interval_start - RETAINED_SPAN
+        for old in [t for t in self._keys_by_interval if t < cutoff]:
+            for key in self._keys_by_interval.pop(old):
+                self._received.discard(key)
+                self._acks.pop(key, None)
+                self._effects.pop(key, None)
+        self._seq = {k: v for k, v in self._seq.items() if k[1] >= cutoff}
+        self._interval_mw = {k: v for k, v in self._interval_mw.items() if k[1] >= cutoff}
 
     def _act(self, command: Command) -> Ack:
         state = self._devices.get(command.device_id)

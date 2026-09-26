@@ -12,7 +12,7 @@ from gridtwin.fleet.models import Heartbeat
 from gridtwin.ledger.db import init_schema, record_heartbeat
 from gridtwin.settings import settings
 from gridtwin.telemetry.repo import LatestHeartbeats, PostgresTelemetryRepo
-from gridtwin.transport.nats_transport import TELEMETRY_WILDCARD
+from gridtwin.transport.nats_transport import TELEMETRY_WILDCARD, pending_limits
 
 SERVICE_NAME = "telemetry"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -46,7 +46,13 @@ async def main() -> None:
     async def on_heartbeats(msg) -> None:
         buffer.add([Heartbeat.model_validate(h) for h in json.loads(msg.data.decode())])
 
-    await nc.subscribe(TELEMETRY_WILDCARD, cb=on_heartbeats)
+    # Bounded: a backlog past the limit is dropped, and the buffer keeps only the latest
+    # Heartbeat per Device, so ingestion memory is capped by the fleet size.
+    await nc.subscribe(
+        TELEMETRY_WILDCARD,
+        cb=on_heartbeats,
+        **pending_limits(settings.nats_pending_msgs_limit, settings.nats_pending_bytes_mb),
+    )
     log.info("%s ingesting %s", instance_id, TELEMETRY_WILDCARD)
     try:
         await asyncio.gather(

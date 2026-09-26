@@ -31,6 +31,12 @@ CHAOS_PARTITION_SUBJECT = "control.chaos.partition"
 CHAOS_TELEMETRY_DELAY_SUBJECT = "control.chaos.telemetry_delay"
 
 
+def pending_limits(msgs_limit: int, bytes_mb: int) -> dict[str, int]:
+    """Backpressure: the bound on one subscription's pending queue. Past it NATS drops
+    messages and reports a slow consumer rather than buffering without limit."""
+    return {"pending_msgs_limit": msgs_limit, "pending_bytes_limit": bytes_mb * 1024 * 1024}
+
+
 class NatsTransport:
     def __init__(self, nc: NatsClient) -> None:
         self._nc = nc

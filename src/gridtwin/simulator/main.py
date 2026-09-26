@@ -21,6 +21,7 @@ from gridtwin.transport.nats_transport import (
     CHAOS_DUPLICATES_SUBJECT,
     CHAOS_PARTITION_SUBJECT,
     CHAOS_TELEMETRY_DELAY_SUBJECT,
+    pending_limits,
     reset_subject,
     shard_subject,
     telemetry_subject,
@@ -55,8 +56,9 @@ async def _serve_shard(nc, shard_id: str, shard: ShardSimulator) -> None:
         )
         await msg.respond(_dump(shard.heartbeats()))
 
-    await nc.subscribe(shard_subject(shard_id), cb=on_batch)
-    await nc.subscribe(reset_subject(shard_id), cb=on_reset)
+    limits = pending_limits(settings.nats_pending_msgs_limit, settings.nats_pending_bytes_mb)
+    await nc.subscribe(shard_subject(shard_id), cb=on_batch, **limits)
+    await nc.subscribe(reset_subject(shard_id), cb=on_reset, **limits)
     log.info("serving shard %s", shard_id)
 
 
