@@ -4,6 +4,8 @@ import type { components } from "@/types/api";
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type IntervalResult = components["schemas"]["IntervalResult"];
 export type LatestRun = components["schemas"]["LatestRun"];
+export type CachedDay = components["schemas"]["CachedDay"];
+export type PricePoint = components["schemas"]["PricePoint"];
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE_URL}/health`, { cache: "no-store" });
@@ -13,4 +15,18 @@ export async function fetchHealth(): Promise<HealthResponse> {
 export async function fetchLatestRun(): Promise<LatestRun> {
   const res = await fetch(`${API_BASE_URL}/runs/latest`, { cache: "no-store" });
   return (await res.json()) as LatestRun;
+}
+
+export async function fetchCachedDays(settlementPoint: string): Promise<CachedDay[]> {
+  const res = await fetch(
+    `${API_BASE_URL}/marketdata/days?settlement_point=${encodeURIComponent(settlementPoint)}`,
+    { cache: "no-store" },
+  );
+  return (await res.json()) as CachedDay[];
+}
+
+export async function fetchPrices(settlementPoint: string, day: string): Promise<PricePoint[]> {
+  const params = new URLSearchParams({ settlement_point: settlementPoint, day });
+  const res = await fetch(`${API_BASE_URL}/marketdata/prices?${params}`, { cache: "no-store" });
+  return (await res.json()) as PricePoint[];
 }
