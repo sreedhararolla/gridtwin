@@ -5,7 +5,7 @@
 | # | Ticket | Priority | Blocked by | Status | Issue | Closed (CT) |
 |---|---|---|---|---|---|---|
 | 01 | Walking skeleton | P0 | — | done | #2 | Sat 01:30 |
-| 02 | Tracer bullet: one real day dispatches 10 batteries | P0 | 01 | todo | #3 | |
+| 02 | Tracer bullet: one real day dispatches 10 batteries | P0 | 01 | done | #3 | Sat 07:20 |
 | 03 | ERCOT + weather data cache | P0 | 01 | todo | #4 | |
 | 04 | Fleet at scale + any-day replay | P0 | 02, 03 | todo | #5 | |
 | 05 | Chaos panel + worker-kill resilience | P0 | 04 | todo | #6 | |
