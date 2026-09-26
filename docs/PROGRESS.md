@@ -12,7 +12,7 @@
 | 06 | Exactly-once effects under retries and duplicates | P0 | 05 | done | #7 | Sat 10:58 |
 | 07 | Device dropout, stale telemetry, reallocation | P0 | 05 | done | #8 | Sat 11:58 |
 | 08 | Feed failure + degradation ladder | P1 | 05 | done | #9 | Sat 07:50 |
-| 09 | LP planner + strategy backtest | P0 | 04 | todo | #10 | |
+| 09 | LP planner + strategy backtest | P0 | 04 | done | #10 | Sat 08:32 |
 | 10 | Scarcity-risk model | P1 | 09 | todo | #11 | |
 | 11 | Insights: what most people miss | P0 | 03 | todo | #12 | |
 | 12 | Scale + benchmarks | P2 | 06, 07 | todo | #13 | |
