@@ -43,6 +43,21 @@ class Settings(BaseSettings):
 
     dispatch_timeout_seconds: float = 5.0
 
+    # Ticket 03 appends the market data ingest settings below this line.
+    marketdata_cache_dir: str = "data/cache"
+    marketdata_start_date: str = "2025-12-05"
+    marketdata_include_pre_rtcb: bool = False
+    ercot_throttle_per_minute: int = 30
+    ercot_api_username: str = ""
+    ercot_api_password: str = ""
+    ercot_api_subscription_key: str = ""
+
+    @property
+    def ercot_api_configured(self) -> bool:
+        return bool(
+            self.ercot_api_username and self.ercot_api_password and self.ercot_api_subscription_key
+        )
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

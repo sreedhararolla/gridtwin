@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types demo
+.PHONY: setup up down logs check test test-e2e types demo data
 
 setup:
 	bash scripts/bootstrap.sh
@@ -37,3 +37,6 @@ demo:
 	docker compose up -d --build
 	uv run python scripts/wait_for_health.py
 	uv run python -m gridtwin.replay.cli
+
+data:
+	uv run python -m gridtwin.marketdata.cli ingest
