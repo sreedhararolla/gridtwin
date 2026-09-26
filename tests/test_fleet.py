@@ -97,7 +97,7 @@ def test_shard_simulator_is_reproducible_for_a_seed_and_applies_noise_and_faults
     for _ in range(2):
         shard = ShardSimulator()
         shard.reset(reset)
-        runs.append(shard.handle_batch([command(d.device_id, 0.005) for d in devices]))
+        runs.append(shard.handle_batch([command(d.device_id, 0.005) for d in devices]).acks)
     assert runs[0] == runs[1]
     acks = runs[0]
     delivered = [a.delivered_mw for a in acks if a.applied]
@@ -145,7 +145,7 @@ def test_shard_ignores_commands_from_a_run_that_no_longer_owns_it():
             seed=1,
         )
     )
-    [ack] = shard.handle_batch([command(devices[0].device_id, 0.005)])  # run_id="run"
+    [ack] = shard.handle_batch([command(devices[0].device_id, 0.005)]).acks  # run_id="run"
     assert ack.applied is False
     assert shard.snapshot()[0] == devices[0]
 

@@ -1,7 +1,10 @@
 """Simple SoC physics for a Base Core battery, with the Reserve Floor enforced on the
 device (defense in depth: the planner and the disaggregator also enforce it)."""
 
-from gridtwin.fleet.models import Ack, Command, DeviceState
+from datetime import datetime
+from typing import Literal
+
+from gridtwin.fleet.models import Ack, AckOutcome, Command, DeviceState
 
 INTERVAL_HOURS = 0.25
 FLOOR_EPSILON = 1e-9
@@ -32,6 +35,45 @@ def aggregate_headroom(devices: list[DeviceState]) -> tuple[float, float]:
     return discharge_total, charge_total
 
 
+CommandVerdict = Literal["apply", "duplicate", "expired", "superseded"]
+
+
+def screen_command(
+    command: Command,
+    already_answered: bool,
+    device_clock: datetime | None,
+    latest_seq: int | None,
+) -> CommandVerdict:
+    """Decide whether a Device may act on a delivered Command (exactly-once effects).
+
+    `already_answered`: this Device has already acted on this Idempotency Key (or tried
+    to and faulted); it replays that answer instead of acting again.
+    `device_clock`: the latest Market Interval this Device has acted in; a Command whose
+    expiry is at or before it arrived late (e.g. a replayed old batch) and is ignored.
+    `latest_seq`: the highest seq this Device has acted on for the Command's interval; a
+    lower seq has been superseded by a Reallocation.
+    """
+    if already_answered:
+        return "duplicate"
+    if device_clock is not None and command.expires_at <= device_clock:
+        return "expired"
+    if latest_seq is not None and command.seq < latest_seq:
+        return "superseded"
+    return "apply"
+
+
+def ignored_ack(state: DeviceState, command: Command, outcome: AckOutcome) -> Ack:
+    """The Ack for a Command the Device did not act on: nothing delivered, SoC unchanged."""
+    return Ack(
+        idempotency_key=command.idempotency_key,
+        device_id=state.device_id,
+        applied=False,
+        delivered_mw=0.0,
+        soc_pct_after=state.soc_pct,
+        outcome=outcome,
+    )
+
+
 def apply_command(
     state: DeviceState, command: Command, response_factor: float = 1.0, faulted: bool = False
 ) -> tuple[DeviceState, Ack]:
@@ -42,13 +84,7 @@ def apply_command(
     device failed to act at all. Both are drawn by the (seeded) simulator, keeping this pure.
     """
     if faulted:
-        return state, Ack(
-            idempotency_key=command.idempotency_key,
-            device_id=state.device_id,
-            applied=False,
-            delivered_mw=0.0,
-            soc_pct_after=state.soc_pct,
-        )
+        return state, ignored_ack(state, command, "failed")
 
     discharge_mw, charge_mw = headroom_mw(state)
     setpoint_mw = command.setpoint_mw * max(response_factor, 0.0)

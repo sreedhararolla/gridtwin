@@ -8,7 +8,7 @@ round trip per Command batch, not one per Device.
 from typing import Protocol
 
 from gridtwin.fleet.models import Ack, Command, DeviceState
-from gridtwin.ledger.models import IntervalResult
+from gridtwin.ledger.models import IntervalResult, LedgerIntervalSummary
 
 
 class LedgerRepo(Protocol):
@@ -19,6 +19,10 @@ class LedgerRepo(Protocol):
     def list_interval_results(self, run_id: str) -> list[IntervalResult]: ...
     def command_counts(self, run_id: str) -> tuple[int, int]:
         """(total commands, acked commands) for this run."""
+        ...
+
+    def ledger_summary(self, run_id: str) -> list[LedgerIntervalSummary]:
+        """Per Market Interval: Commands issued, acked, expired, failed."""
         ...
 
     def latest_run_id(self) -> str | None: ...

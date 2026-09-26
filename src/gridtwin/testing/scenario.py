@@ -16,7 +16,7 @@ from gridtwin.dispatch.publish import NullPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunInput, ReplayRunWorkflow
 from gridtwin.fleet.models import FleetConfig
 from gridtwin.ledger.memory_repo import InMemoryLedgerRepo
-from gridtwin.ledger.models import IntervalResult
+from gridtwin.ledger.models import IntervalResult, LedgerIntervalSummary
 from gridtwin.telemetry.repo import InMemoryTelemetryRepo
 from gridtwin.transport.memory import InMemoryTransport
 
@@ -46,6 +46,8 @@ class ScenarioReport(BaseModel):
 class ScenarioResult(BaseModel):
     report: ScenarioReport
     results: list[IntervalResult]
+    ledger: list[LedgerIntervalSummary] = []
+    ledger_rows: int = 0  # Commands in the ledger: one row per Idempotency Key
 
 
 async def run_scenario(
@@ -60,10 +62,16 @@ async def run_scenario(
     stale_after_seconds: float,
     day: date | None = None,
     tolerance_pct: float = 0.05,
+    duplicate_commands: bool = False,
+    partial_send_failures: int = 0,
 ) -> ScenarioResult:
+    """`duplicate_commands` runs the whole replay under the duplicate-commands Chaos
+    Scenario; `partial_send_failures` = n makes the first n Shard batches fail after a
+    partial send, forcing Temporal to retry those dispatches."""
     repo = InMemoryLedgerRepo()
     telemetry = InMemoryTelemetryRepo()
-    transport = InMemoryTransport(telemetry=telemetry)
+    transport = InMemoryTransport(telemetry=telemetry, duplicates=duplicate_commands)
+    transport.fail_after_partial_send = partial_send_failures
     activities = DispatchActivities(
         repo=repo, telemetry=telemetry, transport=transport, publisher=NullPublisher()
     )
@@ -98,7 +106,12 @@ async def run_scenario(
             await handle.result()
 
     results = repo.list_interval_results(run_id)
-    return ScenarioResult(report=build_report(results, tolerance_pct), results=results)
+    return ScenarioResult(
+        report=build_report(results, tolerance_pct),
+        results=results,
+        ledger=repo.ledger_summary(run_id),
+        ledger_rows=repo.command_counts(run_id)[0],
+    )
 
 
 def build_report(results: list[IntervalResult], tolerance_pct: float) -> ScenarioReport:
@@ -119,6 +132,9 @@ def build_report(results: list[IntervalResult], tolerance_pct: float) -> Scenari
         intervals=len(results),
         within_tolerance_pct=within_tolerance_pct(results, tolerance_pct),
         reserve_violations=sum(r.reserve_violations for r in results),
+        duplicate_deliveries=sum(r.duplicate_deliveries for r in results),
+        duplicate_effects=sum(r.duplicate_effects for r in results),
+        retried_dispatches=sum(r.retried_dispatches for r in results),
         value_usd=value_usd,
         p99_dispatch_ms=latencies[p99_index],
         median_dispatch_ms=median(latencies),

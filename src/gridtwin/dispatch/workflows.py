@@ -47,6 +47,9 @@ class ShardDispatchResult(BaseModel, frozen=True):
     acked_count: int
     delivered_mw: float
     reserve_violations: int
+    duplicate_deliveries: int = 0
+    duplicate_effects: int = 0
+    attempt: int = 1  # the activity attempt that succeeded; > 1 = retried
 
 
 class MarketIntervalInput(BaseModel, frozen=True):
@@ -168,6 +171,9 @@ class MarketIntervalWorkflow:
             dispatched_count=sum(r.dispatched_count for r in shard_results),
             acked_count=sum(r.acked_count for r in shard_results),
             reserve_violations=sum(r.reserve_violations for r in shard_results),
+            duplicate_deliveries=sum(r.duplicate_deliveries for r in shard_results),
+            duplicate_effects=sum(r.duplicate_effects for r in shard_results),
+            retried_dispatches=sum(1 for r in shard_results if r.attempt > 1),
             latency_ms=latency_ms,
             budget_ms=input.budget_ms,
             online_devices=len(fleet_state.devices),

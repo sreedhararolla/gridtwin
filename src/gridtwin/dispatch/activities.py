@@ -123,6 +123,8 @@ class DispatchActivities:
         seq: int,
         timeout_seconds: float,
     ) -> ShardDispatchResult:
+        # Keys are a pure function of the inputs, so a retry after a partial send re-sends
+        # the same keys and the Devices dedupe them (exactly-once effects).
         expires_at = interval_start + timedelta(minutes=INTERVAL_MINUTES)
         commands = [
             Command(
@@ -142,16 +144,21 @@ class DispatchActivities:
         heartbeats = asyncio.create_task(_heartbeat_until_cancelled(shard_id))
         try:
             await asyncio.to_thread(self._repo.upsert_commands, commands)
-            acks = await self._transport.send_batch(shard_id, commands, timeout_seconds)
-            await asyncio.to_thread(self._repo.record_acks, acks)
+            reply = await self._transport.send_batch(shard_id, commands, timeout_seconds)
+            await asyncio.to_thread(self._repo.record_acks, reply.acks)
         finally:
             heartbeats.cancel()
+        acks = reply.acks
+        attempt = activity.info().attempt
         return ShardDispatchResult(
             shard_id=shard_id,
             dispatched_count=len(commands),
             acked_count=sum(1 for a in acks if a.applied),
             delivered_mw=sum(a.delivered_mw for a in acks),
             reserve_violations=sum(1 for a in acks if a.floor_violation),
+            duplicate_deliveries=reply.duplicate_deliveries,
+            duplicate_effects=reply.duplicate_effects,
+            attempt=attempt,
         )
 
     @activity.defn

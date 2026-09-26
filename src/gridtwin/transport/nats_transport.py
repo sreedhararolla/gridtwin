@@ -7,7 +7,7 @@ import json
 import nats
 from nats.aio.client import Client as NatsClient
 
-from gridtwin.fleet.models import Ack, Command, Heartbeat, ShardReset
+from gridtwin.fleet.models import BatchReply, Command, Heartbeat, ShardReset
 
 
 def shard_subject(shard_id: str) -> str:
@@ -23,6 +23,8 @@ def telemetry_subject(shard_id: str) -> str:
 
 
 TELEMETRY_WILDCARD = "telemetry.*"
+# Broadcast to every simulator: {"active": bool} toggles the duplicate-commands scenario.
+CHAOS_DUPLICATES_SUBJECT = "control.chaos.duplicates"
 
 
 class NatsTransport:
@@ -42,11 +44,15 @@ class NatsTransport:
 
     async def send_batch(
         self, shard_id: str, commands: list[Command], timeout_seconds: float
-    ) -> list[Ack]:
+    ) -> BatchReply:
         payload = json.dumps([c.model_dump(mode="json") for c in commands]).encode()
         msg = await self._nc.request(shard_subject(shard_id), payload, timeout=timeout_seconds)
-        raw = json.loads(msg.data.decode())
-        return [Ack.model_validate(a) for a in raw]
+        return BatchReply.model_validate_json(msg.data)
+
+    async def set_duplicates(self, active: bool) -> None:
+        """Duplicate-commands Chaos Scenario: tell every simulator (fire and forget)."""
+        await self._nc.publish(CHAOS_DUPLICATES_SUBJECT, json.dumps({"active": active}).encode())
+        await self._nc.flush()
 
     async def close(self) -> None:
         await self._nc.close()

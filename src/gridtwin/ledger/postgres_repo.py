@@ -5,12 +5,18 @@ batch costs one round trip, not 100."""
 
 from gridtwin.fleet.models import Ack, Command, DeviceState
 from gridtwin.ledger.db import get_conn
-from gridtwin.ledger.models import IntervalResult
+from gridtwin.ledger.models import (
+    IntervalResult,
+    LedgerIntervalSummary,
+    command_status,
+    summarize_ledger,
+)
 
 RESULT_COLUMNS = (
     "run_id, interval_start, settlement_point, price_usd_per_mwh, target_mw, achievable_mw, "
     "delivered_mw, level, dispatched_count, acked_count, reserve_violations, latency_ms, "
-    "budget_ms, online_devices, shard_count, soc_p10_pct, soc_p50_pct, soc_p90_pct"
+    "budget_ms, online_devices, shard_count, soc_p10_pct, soc_p50_pct, soc_p90_pct, "
+    "duplicate_deliveries, duplicate_effects, retried_dispatches"
 )
 RESULT_FIELDS = [c.strip() for c in RESULT_COLUMNS.split(",")]
 
@@ -71,11 +77,26 @@ class PostgresLedgerRepo:
         with get_conn() as conn, conn.cursor() as cur:
             cur.executemany(
                 """
-                UPDATE commands SET applied = %s, delivered_mw = %s, acked_at = now()
+                UPDATE commands
+                SET applied = %s, delivered_mw = %s, status = %s, acked_at = now()
                 WHERE idempotency_key = %s
                 """,
-                [(a.applied, a.delivered_mw, a.idempotency_key) for a in acks],
+                [
+                    (a.applied, a.delivered_mw, command_status(a.outcome), a.idempotency_key)
+                    for a in acks
+                ],
             )
+
+    def ledger_summary(self, run_id: str) -> list[LedgerIntervalSummary]:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT interval_start, status, coalesce(delivered_mw, 0)
+                FROM commands WHERE run_id = %s
+                """,
+                (run_id,),
+            ).fetchall()
+        return summarize_ledger([(r[0], r[1], r[2]) for r in rows])
 
     def record_interval_result(self, result: IntervalResult) -> None:
         placeholders = ", ".join(["%s"] * len(RESULT_FIELDS))
@@ -87,7 +108,10 @@ class PostgresLedgerRepo:
                 ON CONFLICT (run_id, interval_start) DO UPDATE SET
                     delivered_mw = EXCLUDED.delivered_mw,
                     acked_count = EXCLUDED.acked_count,
-                    reserve_violations = EXCLUDED.reserve_violations
+                    reserve_violations = EXCLUDED.reserve_violations,
+                    duplicate_deliveries = EXCLUDED.duplicate_deliveries,
+                    duplicate_effects = EXCLUDED.duplicate_effects,
+                    retried_dispatches = EXCLUDED.retried_dispatches
                 """,
                 tuple(getattr(result, f) for f in RESULT_FIELDS),
             )

@@ -6,7 +6,7 @@ NATS in compose (ADR-002), in-memory for the Scenario Runner and tests.
 
 from typing import Protocol
 
-from gridtwin.fleet.models import Ack, Command, Heartbeat, ShardReset
+from gridtwin.fleet.models import BatchReply, Command, Heartbeat, ShardReset
 
 
 class Transport(Protocol):
@@ -16,4 +16,7 @@ class Transport(Protocol):
 
     async def send_batch(
         self, shard_id: str, commands: list[Command], timeout_seconds: float
-    ) -> list[Ack]: ...
+    ) -> BatchReply:
+        """At-least-once: a caller may send the same batch again after a failure; the
+        shard's Devices dedupe by Idempotency Key."""
+        ...

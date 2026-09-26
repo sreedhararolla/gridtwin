@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS commands (
     acked_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS commands_run_id_idx ON commands (run_id);
+-- Lifecycle: issued -> acked / expired / failed (the ledger summary groups by it).
+ALTER TABLE commands ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'issued';
 
 CREATE TABLE IF NOT EXISTS interval_results (
     run_id TEXT NOT NULL,
@@ -67,7 +69,10 @@ ALTER TABLE interval_results
     ADD COLUMN IF NOT EXISTS shard_count INT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS soc_p10_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS soc_p50_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS soc_p90_pct DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS soc_p90_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS duplicate_deliveries INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS duplicate_effects INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS retried_dispatches INT NOT NULL DEFAULT 0;
 
 -- Telemetry: the latest Heartbeat per Device per run, batched in by the ingester.
 CREATE TABLE IF NOT EXISTS device_telemetry (

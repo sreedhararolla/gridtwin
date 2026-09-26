@@ -1,16 +1,23 @@
-"""In-memory LedgerRepo for the Scenario Runner (Seam A) and unit tests."""
+"""In-memory LedgerRepo for the Scenario Runner (Seam A) and unit tests. Like the Postgres
+table, Commands are keyed by Idempotency Key: re-issuing a key never adds a row."""
 
 from collections import defaultdict
 
 from gridtwin.fleet.models import Ack, Command, DeviceState
-from gridtwin.ledger.models import IntervalResult
+from gridtwin.ledger.models import (
+    CommandStatus,
+    IntervalResult,
+    LedgerIntervalSummary,
+    command_status,
+    summarize_ledger,
+)
 
 
 class InMemoryLedgerRepo:
     def __init__(self) -> None:
         self._devices: dict[str, dict[str, DeviceState]] = defaultdict(dict)
         self._commands: dict[str, Command] = {}
-        self._acked_keys: set[str] = set()
+        self._acks: dict[str, Ack] = {}
         self._results: dict[str, dict] = defaultdict(dict)
         self._latest_run_id: str | None = None
 
@@ -25,7 +32,8 @@ class InMemoryLedgerRepo:
             self._commands.setdefault(command.idempotency_key, command)
 
     def record_acks(self, acks: list[Ack]) -> None:
-        self._acked_keys.update(ack.idempotency_key for ack in acks if ack.applied)
+        for ack in acks:
+            self._acks[ack.idempotency_key] = ack
 
     def record_interval_result(self, result: IntervalResult) -> None:
         self._results[result.run_id][result.interval_start] = result
@@ -35,8 +43,22 @@ class InMemoryLedgerRepo:
 
     def command_counts(self, run_id: str) -> tuple[int, int]:
         commands = [c for c in self._commands.values() if c.run_id == run_id]
-        acked = [c for c in commands if c.idempotency_key in self._acked_keys]
+        acked = [
+            c
+            for c in commands
+            if c.idempotency_key in self._acks and self._acks[c.idempotency_key].applied
+        ]
         return len(commands), len(acked)
+
+    def ledger_summary(self, run_id: str) -> list[LedgerIntervalSummary]:
+        rows: list = []
+        for command in self._commands.values():
+            if command.run_id != run_id:
+                continue
+            ack = self._acks.get(command.idempotency_key)
+            status: CommandStatus = "issued" if ack is None else command_status(ack.outcome)
+            rows.append((command.interval_start, status, ack.delivered_mw if ack else 0.0))
+        return summarize_ledger(rows)
 
     def latest_run_id(self) -> str | None:
         return self._latest_run_id

@@ -1,6 +1,7 @@
 """Device, Command, Ack and Heartbeat: the pure domain's view of one simulated battery."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -52,6 +53,13 @@ class Command(BaseModel, frozen=True):
     expires_at: datetime
 
 
+# What a Device did with a Command. `applied` acted on it; `expired` / `superseded` ignored
+# it (its interval is over / a higher seq already acted); `failed` could not act (a fault,
+# or the Device is not in this run). A repeat delivery of an applied key gets the original
+# Ack back, unchanged.
+AckOutcome = Literal["applied", "expired", "superseded", "failed"]
+
+
 class Ack(BaseModel, frozen=True):
     idempotency_key: str
     device_id: str
@@ -59,6 +67,17 @@ class Ack(BaseModel, frozen=True):
     delivered_mw: float
     soc_pct_after: float
     floor_violation: bool = False
+    outcome: AckOutcome = "applied"
+
+
+class BatchReply(BaseModel, frozen=True):
+    """A Shard's answer to one Command batch: the Acks, plus what it saw while handling it
+    (under the duplicate-commands scenario that includes repeat and replayed deliveries
+    whose Acks go nowhere)."""
+
+    acks: list[Ack]
+    duplicate_deliveries: int = 0  # deliveries of a key the Shard had already received
+    duplicate_effects: int = 0  # a Device acting on the same key twice (must be 0)
 
 
 class Heartbeat(BaseModel, frozen=True):

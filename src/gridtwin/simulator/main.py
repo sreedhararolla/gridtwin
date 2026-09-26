@@ -17,7 +17,12 @@ from gridtwin.fleet.shard import ShardSimulator
 from gridtwin.ledger.db import init_schema, record_heartbeat
 from gridtwin.settings import settings
 from gridtwin.telemetry.staleness import heartbeat_period_seconds
-from gridtwin.transport.nats_transport import reset_subject, shard_subject, telemetry_subject
+from gridtwin.transport.nats_transport import (
+    CHAOS_DUPLICATES_SUBJECT,
+    reset_subject,
+    shard_subject,
+    telemetry_subject,
+)
 
 SERVICE_NAME = "simulator"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -31,7 +36,7 @@ def _dump(models) -> bytes:
 async def _serve_shard(nc, shard_id: str, shard: ShardSimulator) -> None:
     async def on_batch(msg) -> None:
         commands = [Command.model_validate(c) for c in json.loads(msg.data.decode())]
-        await msg.respond(_dump(shard.handle_batch(commands)))
+        await msg.respond(shard.handle_batch(commands).model_dump_json().encode())
 
     async def on_reset(msg) -> None:
         reset = ShardReset.model_validate_json(msg.data)
@@ -82,6 +87,14 @@ async def main() -> None:
     shards = {shard_id: ShardSimulator() for shard_id in settings.shard_id_list}
     for shard_id, shard in shards.items():
         await _serve_shard(nc, shard_id, shard)
+
+    async def on_duplicates(msg) -> None:
+        active = bool(json.loads(msg.data.decode()).get("active"))
+        for shard in shards.values():
+            shard.set_duplicates(active)
+        log.info(json.dumps({"event": "chaos_duplicates", "active": active}))
+
+    await nc.subscribe(CHAOS_DUPLICATES_SUBJECT, cb=on_duplicates)
 
     try:
         await asyncio.gather(liveness_loop(instance_id), telemetry_loop(nc, shards))
