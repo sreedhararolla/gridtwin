@@ -231,6 +231,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/insights/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Insights */
+        get: operations["get_insights_insights_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/risk/day": {
         parameters: {
             query?: never;
@@ -383,6 +400,32 @@ export interface components {
              */
             target: string;
         };
+        /** Concentration */
+        Concentration: {
+            /** Regime */
+            regime: string;
+            /** Intervals */
+            intervals: number;
+            /** Days */
+            days: number;
+            /** Total Opportunity Usd */
+            total_opportunity_usd: number;
+            /** Top Intervals */
+            top_intervals: components["schemas"]["TopShare"][];
+            /** Top Days Share Pct */
+            top_days_share_pct: number;
+            /** Top Days */
+            top_days: components["schemas"]["TopDay"][];
+            /** Curve */
+            curve: components["schemas"]["CurvePoint"][];
+        };
+        /** CurvePoint */
+        CurvePoint: {
+            /** Intervals Pct */
+            intervals_pct: number;
+            /** Value Pct */
+            value_pct: number;
+        };
         /** DayResult */
         DayResult: {
             /**
@@ -417,6 +460,19 @@ export interface components {
              */
             detail: string;
         };
+        /** DowntimeCell */
+        DowntimeCell: {
+            /** Month */
+            month: string;
+            /** Hour */
+            hour: number;
+            /** Intervals */
+            intervals: number;
+            /** Mean Usd Per Min */
+            mean_usd_per_min: number;
+            /** P95 Usd Per Min */
+            p95_usd_per_min: number;
+        };
         /** FoldResult */
         FoldResult: {
             /** Test Month */
@@ -436,10 +492,36 @@ export interface components {
             model: components["schemas"]["ScoreCard"];
             climatology: components["schemas"]["ScoreCard"];
         };
+        /** ForecastError */
+        ForecastError: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** Headline */
+        Headline: {
+            /** Top1 Share Pct */
+            top1_share_pct: number;
+            /** Top5 Share Pct */
+            top5_share_pct: number;
+            /** Top10 Days Share Pct */
+            top10_days_share_pct: number;
+            /** Peak Month */
+            peak_month: string;
+            /** Peak Hour */
+            peak_hour: number;
+            /** Peak Mean Usd Per Min */
+            peak_mean_usd_per_min: number;
+            /** Peak P95 Usd Per Min */
+            peak_p95_usd_per_min: number;
+            /** Text */
+            text: string;
         };
         /** HealthResponse */
         HealthResponse: {
@@ -449,6 +531,25 @@ export interface components {
             dependencies: components["schemas"]["DependencyStatus"][];
             /** Services */
             services: components["schemas"]["ServiceCount"][];
+        };
+        /** InsightsReport */
+        InsightsReport: {
+            /** Settlement Point */
+            settlement_point: string;
+            /** Device Count */
+            device_count: number;
+            /** Fleet Mw */
+            fleet_mw: number;
+            /** Start Day */
+            start_day: string | null;
+            /** End Day */
+            end_day: string | null;
+            headline: components["schemas"]["Headline"] | null;
+            /** Concentration */
+            concentration: components["schemas"]["Concentration"][];
+            /** Downtime */
+            downtime: components["schemas"]["DowntimeCell"][];
+            forecast_error: components["schemas"]["ForecastError"];
         };
         /** IntervalResult */
         IntervalResult: {
@@ -779,6 +880,27 @@ export interface components {
             discharged_mwh: number;
             /** Share Of Perfect Foresight Pct */
             share_of_perfect_foresight_pct: number;
+        };
+        /** TopDay */
+        TopDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Opportunity Usd */
+            opportunity_usd: number;
+            /** Share Pct */
+            share_pct: number;
+        };
+        /** TopShare */
+        TopShare: {
+            /** Top Pct */
+            top_pct: number;
+            /** Intervals */
+            intervals: number;
+            /** Share Pct */
+            share_pct: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -1175,6 +1297,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BacktestReport"];
+                };
+            };
+        };
+    };
+    get_insights_insights_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightsReport"];
                 };
             };
         };

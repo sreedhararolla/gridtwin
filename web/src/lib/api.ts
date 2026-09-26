@@ -16,6 +16,17 @@ export type BacktestReport = components["schemas"]["BacktestReport"];
 export type StrategySummary = components["schemas"]["StrategySummary"];
 export type DayResult = components["schemas"]["DayResult"];
 export type RiskDay = components["schemas"]["RiskDay"];
+export type InsightsReport = components["schemas"]["InsightsReport"];
+export type DowntimeCell = components["schemas"]["DowntimeCell"];
+export type Concentration = components["schemas"]["Concentration"];
+
+// null = no insights yet (`make insights` has not been run).
+export async function fetchInsights(): Promise<InsightsReport | null> {
+  const res = await fetch(`${API_BASE_URL}/insights/report`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`insights failed: ${res.status}`);
+  return (await res.json()) as InsightsReport;
+}
 
 // null = no Risk Curve for that day (`make train` has not been run, or the day is not cached).
 export async function fetchRiskDay(day: string): Promise<RiskDay | null> {

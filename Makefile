@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types demo data chaos ledger backtest train
+.PHONY: setup up down logs check test test-e2e types demo data chaos ledger backtest train insights
 
 SCENARIO ?= worker-kill
 
@@ -63,3 +63,8 @@ train:
 # window. Run `make train` first for lp_risk's Risk Curves.
 backtest:
 	uv run python -m gridtwin.insights.backtest
+
+# Value concentration + downtime-cost heatmap from the cache: insights.json for the
+# Insights tab, plus the same numbers as CSV (and the heatmap as SVG) in data/cache/insights/.
+insights:
+	uv run python -X utf8 -m gridtwin.insights.report
