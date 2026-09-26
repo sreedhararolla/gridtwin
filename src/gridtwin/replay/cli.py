@@ -32,6 +32,7 @@ def build_run_input(run_id: str, day: date | None, settlement_point: str) -> Rep
         dispatch_timeout_seconds=settings.dispatch_timeout_seconds,
         stale_after_seconds=settings.stale_after_seconds,
         reallocation=settings.reallocation_config(),
+        ladder=settings.ladder_config(),
     )
 
 

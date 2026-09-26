@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   applyChaos,
+  clearChaos,
   type ApplyChaosOptions,
   type ChaosEvent,
   type IntervalResult,
@@ -13,6 +14,14 @@ import {
 const PARTITION_PCT = 0.2;
 const TELEMETRY_DELAY_S = 10;
 const TELEMETRY_DELAY_PCT = 0.3;
+const FEED_OUTAGE_S = 90; // wall seconds: 6 intervals at 60x, unless restored sooner
+const FEED_OUTLIER_S = 15; // one interval at 60x
+
+// Is the latest feed-outage event an apply (still broken)?
+function feedOutageActive(events: ChaosEvent[]): boolean {
+  const last = events.filter((e) => e.scenario === "feed-outage").at(-1);
+  return last?.action === "apply";
+}
 
 type FleetEvent = {
   key: string;
@@ -33,7 +42,26 @@ function count(n: number): string {
 function fleetEvents(results: IntervalResult[]): FleetEvent[] {
   const out: FleetEvent[] = [];
   let previousStale = 0;
+  let previousLevel = "L0";
   for (const r of results) {
+    // Degradation Ladder: rejected snapshots and every level transition.
+    if (r.feed_status === "rejected") {
+      out.push({
+        key: `${r.interval_start}-rejected`,
+        interval: r.interval_start,
+        text: "snapshot rejected · no dispatch on it",
+        detail: r.feed_detail,
+      });
+    }
+    if (r.level !== previousLevel) {
+      out.push({
+        key: `${r.interval_start}-level`,
+        interval: r.interval_start,
+        text: `ladder ${previousLevel} → ${r.level}`,
+        detail: r.feed_detail || (r.feed_status === "ok" ? "feed clean" : r.feed_status),
+      });
+      previousLevel = r.level;
+    }
     const stale = r.stale_devices ?? 0;
     const unresponsive = r.unresponsive_devices ?? 0;
     if (stale !== previousStale) {
@@ -71,7 +99,11 @@ function fleetEvents(results: IntervalResult[]): FleetEvent[] {
 function FleetTimeline({ results }: { results: IntervalResult[] }) {
   const events = fleetEvents(results);
   if (events.length === 0) {
-    return <p className="text-sm text-slate-500">No stale devices or reallocations yet.</p>;
+    return (
+      <p className="text-sm text-slate-500">
+        No stale devices, reallocations or ladder changes yet.
+      </p>
+    );
   }
   return (
     <ol className="flex flex-col gap-1 border-l-2 border-slate-600 pl-3 text-sm">
@@ -192,6 +224,18 @@ export function ChaosPanel({
     }
   }
 
+  async function restoreFeed() {
+    setError(null);
+    try {
+      await clearChaos(runId, "feed-outage");
+      onApplied();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Feed restore failed");
+    }
+  }
+
+  const feedDown = feedOutageActive(events);
+
   const buttonClass =
     "rounded border border-chaos/60 px-3 py-1 text-sm font-medium text-chaos hover:bg-chaos/10 disabled:opacity-50";
 
@@ -255,6 +299,43 @@ export function ChaosPanel({
           <span className="text-xs text-slate-500">
             Heartbeats of {TELEMETRY_DELAY_PCT * 100} % of devices arrive {TELEMETRY_DELAY_S} s
             late; they go stale and the achievable target is de-rated.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {feedDown ? (
+            <button
+              type="button"
+              onClick={restoreFeed}
+              className="rounded border border-ok/60 px-3 py-1 text-sm font-medium text-ok hover:bg-ok/10"
+            >
+              Restore ERCOT feed
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => apply("feed-outage", { duration_s: FEED_OUTAGE_S })}
+              disabled={arming !== null}
+              className={buttonClass}
+            >
+              Break ERCOT feed
+            </button>
+          )}
+          <span className="text-xs text-slate-500">
+            The replay feed raises (up to {FEED_OUTAGE_S} s): the ladder steps L0 → L1 cached
+            plan → L2 safe rule, then climbs back once the feed is clean.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => apply("feed-outlier", { duration_s: FEED_OUTLIER_S })}
+            disabled={arming !== null}
+            className={buttonClass}
+          >
+            Inject $9,999
+          </button>
+          <span className="text-xs text-slate-500">
+            One $9,999/MWh price: the snapshot is rejected and nothing is dispatched on it.
           </span>
         </div>
         {error ? <span className="text-sm text-bad">{error}</span> : null}

@@ -10,7 +10,10 @@ twice and sometimes replay an old one, then switch it off after `duration_s`. De
 dedupe by Idempotency Key, so duplicate deliveries climb and duplicate effects stay 0.
 
 partition / telemetry-delay: the same broadcast pattern. A seeded share of every Shard's
-Devices drops its Commands and Heartbeats, or has its Heartbeats arrive late."""
+Devices drops its Commands and Heartbeats, or has its Heartbeats arrive late.
+
+feed-outage / feed-outlier: only an event-log row. While it is applied and not cleared,
+the worker's feed read for that run raises, or returns a $9,999 price."""
 
 import asyncio
 import logging
@@ -22,6 +25,9 @@ from fastapi import FastAPI, HTTPException
 from gridtwin.chaos.docker_engine import DockerEngine, ServiceNotFound
 from gridtwin.chaos.events import record_event
 from gridtwin.chaos.models import (
+    FEED_OUTLIER_PRICE_USD,
+    FEED_SCENARIOS,
+    FEED_TARGET,
     SIMULATOR_SCENARIOS,
     SIMULATORS_TARGET,
     ApplyChaosRequest,
@@ -134,8 +140,43 @@ async def _clear_simulator_chaos_later(request: ApplyChaosRequest, delay_s: floa
         await _set_simulator_chaos(request, False, f"cleared after {delay_s:.0f} s")
 
 
+async def _set_feed_chaos(request: ApplyChaosRequest, active: bool, why: str) -> ChaosEvent:
+    """Feed faults are just their event-log rows: the worker's feed read checks for an
+    applied, uncleared one before every snapshot."""
+    detail = (
+        "ERCOT feed raises on every read"
+        if request.scenario == "feed-outage"
+        else f"feed returns ${FEED_OUTLIER_PRICE_USD:,.0f}/MWh"
+    )
+    return await _record(
+        ChaosEvent(
+            run_id=request.run_id,
+            at=datetime.now(UTC),
+            scenario=request.scenario,
+            action="apply" if active else "clear",
+            target=FEED_TARGET,
+            detail=detail if active else why,
+        )
+    )
+
+
+async def _clear_feed_chaos_later(request: ApplyChaosRequest, delay_s: float) -> None:
+    await asyncio.sleep(delay_s)
+    active: dict[str, ApplyChaosRequest] = _state.setdefault("feed_chaos", {})
+    if active.get(request.scenario) is request:
+        del active[request.scenario]
+        await _set_feed_chaos(request, False, f"cleared after {delay_s:.0f} s")
+
+
 @app.post("/clear", response_model=ChaosEvent)
 async def clear(request: ClearChaosRequest) -> ChaosEvent:
+    if request.scenario in FEED_SCENARIOS:
+        applied = _state.setdefault("feed_chaos", {}).pop(request.scenario, None)
+        return await _set_feed_chaos(
+            applied or ApplyChaosRequest(scenario=request.scenario, run_id=request.run_id),
+            False,
+            "feed restored on request",
+        )
     if request.scenario in SIMULATOR_SCENARIOS:
         active: dict[str, ApplyChaosRequest] = _state.setdefault("simulator_chaos", {})
         applied = active.pop(request.scenario, None) or ApplyChaosRequest(
@@ -151,6 +192,11 @@ async def clear(request: ClearChaosRequest) -> ChaosEvent:
 @app.post("/apply", response_model=ChaosEvent)
 async def apply(request: ApplyChaosRequest) -> ChaosEvent:
     delay_s = request.duration_s or settings.chaos_restart_delay_seconds
+    if request.scenario in FEED_SCENARIOS:
+        _state.setdefault("feed_chaos", {})[request.scenario] = request
+        event = await _set_feed_chaos(request, True, "")
+        _later(_clear_feed_chaos_later(request, delay_s))
+        return event
     if request.scenario in SIMULATOR_SCENARIOS:
         _state.setdefault("simulator_chaos", {})[request.scenario] = request
         event = await _set_simulator_chaos(request, True, "")

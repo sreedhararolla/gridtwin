@@ -11,6 +11,7 @@ from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
+from gridtwin.chaos.events import active_feed_faults
 from gridtwin.dispatch.activities import DispatchActivities
 from gridtwin.dispatch.publish import NatsResultPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunWorkflow
@@ -47,6 +48,7 @@ async def main() -> None:
         telemetry=PostgresTelemetryRepo(),
         transport=transport,
         publisher=publisher,
+        feed_faults=active_feed_faults,
     )
     log.info("%s connected: temporal, postgres, nats", instance_id)
 

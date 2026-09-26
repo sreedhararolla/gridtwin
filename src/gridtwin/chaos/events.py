@@ -3,7 +3,7 @@ measured against."""
 
 from datetime import datetime
 
-from gridtwin.chaos.models import ChaosEvent
+from gridtwin.chaos.models import FEED_SCENARIOS, ChaosEvent
 from gridtwin.ledger.db import get_conn
 
 EVENT_FIELDS = ["run_id", "at", "scenario", "action", "target", "interval_start", "detail"]
@@ -25,6 +25,21 @@ def list_events(run_id: str) -> list[ChaosEvent]:
             (run_id,),
         ).fetchall()
     return [ChaosEvent(**dict(zip(EVENT_FIELDS, r, strict=True))) for r in rows]
+
+
+def active_feed_faults(run_id: str, _interval_start: datetime | None = None) -> set[str]:
+    """Feed Chaos Scenarios applied to this run and not yet cleared: the worker's feed read
+    consults the event log itself, so the controller needs no line to the workers."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ON (scenario) scenario, action FROM chaos_events
+            WHERE run_id = %s AND scenario = ANY(%s)
+            ORDER BY scenario, at DESC, id DESC
+            """,
+            (run_id, list(FEED_SCENARIOS)),
+        ).fetchall()
+    return {scenario for scenario, action in rows if action == "apply"}
 
 
 def interval_completed_at(run_id: str) -> dict[datetime, datetime]:

@@ -41,6 +41,19 @@ export async function applyChaos(
   return (await res.json()) as ChaosEvent;
 }
 
+export async function clearChaos(runId: string, scenario: ScenarioName): Promise<ChaosEvent> {
+  const res = await fetch(`${API_BASE_URL}/chaos/clear`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario, run_id: runId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail ?? `chaos clear failed: ${res.status}`);
+  }
+  return (await res.json()) as ChaosEvent;
+}
+
 export async function fetchChaosEvents(runId: string): Promise<ChaosEvent[]> {
   const res = await fetch(`${API_BASE_URL}/runs/${encodeURIComponent(runId)}/chaos-events`, {
     cache: "no-store",

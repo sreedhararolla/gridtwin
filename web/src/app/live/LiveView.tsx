@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChaosPanel } from "@/components/ChaosPanel";
+import { DegradationBadge } from "@/components/DegradationBadge";
 import { DependencyPanel } from "@/components/DependencyPanel";
 import { FleetReadouts } from "@/components/FleetReadouts";
 import { LedgerSummary } from "@/components/LedgerSummary";
@@ -63,9 +64,9 @@ export function LiveView() {
             {runId ? `Run ${runId}` : "Waiting for a replay run…"}
           </h2>
           {latest ? (
-            <span className="text-xs text-slate-500">
-              Level {latest.level} · {results.length} intervals ·{" "}
-              {connected ? "live" : "reconnecting"}
+            <span className="flex items-center gap-3 text-xs text-slate-500">
+              <DegradationBadge latest={latest} />
+              {results.length} intervals · {connected ? "live" : "reconnecting"}
             </span>
           ) : null}
         </div>

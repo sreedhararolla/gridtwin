@@ -224,7 +224,7 @@ export interface components {
              * Scenario
              * @enum {string}
              */
-            scenario: "worker-kill" | "duplicate-commands" | "partition" | "telemetry-delay";
+            scenario: "worker-kill" | "duplicate-commands" | "partition" | "telemetry-delay" | "feed-outage" | "feed-outlier";
             /** Run Id */
             run_id: string;
             /** Target */
@@ -281,7 +281,7 @@ export interface components {
              * Scenario
              * @enum {string}
              */
-            scenario: "worker-kill" | "duplicate-commands" | "partition" | "telemetry-delay";
+            scenario: "worker-kill" | "duplicate-commands" | "partition" | "telemetry-delay" | "feed-outage" | "feed-outlier";
             /** Run Id */
             run_id: string;
             /**
@@ -420,6 +420,16 @@ export interface components {
              * @default 0
              */
             reallocated_devices: number;
+            /**
+             * Feed Status
+             * @default ok
+             */
+            feed_status: string;
+            /**
+             * Feed Detail
+             * @default
+             */
+            feed_detail: string;
         };
         /** LatestRun */
         LatestRun: {
