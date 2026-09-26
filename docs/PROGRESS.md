@@ -17,13 +17,13 @@
 | 11 | Insights: what most people miss | P0 | 03 | done | #12 | Sat 16:32 |
 | 12 | Scale + benchmarks *(optional, not in the MVP)* | P2 | 06, 07 | todo | #13 | |
 | 13 | Demo scenario, README, submission | P0 | 05, 06, 07, 09, 11 | done | #14 | Sat 12:13 |
-| 14 | (Stretch) Storm mode *(not in the MVP)* | Stretch | 09 | todo | #15 | |
+| 14 | (Stretch) Storm mode *(not in the MVP)* | Stretch | 09 | done | #15 | Sat 22:23 |
 
 Status values: `todo` · `in-progress` · `done` · `cut`
 
 **Submission state.** Every P0 and P1 ticket (01–11, 13) is done, and the MVP is
-submittable as it stands. 12 (P2) and 14 (stretch) are optional extras that autopilot may
-still pick up before `AUTOPILOT_DEADLINE`. Whatever is still `todo` at submission is
+submittable as it stands. 14 (stretch) is done too. 12 (P2) is an optional extra, parked
+`needs-human`. Whatever is still `todo` at submission is
 **not shipped**, and the README's Status section says so.
 
 ## Target schedule (CT)
