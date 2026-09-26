@@ -35,6 +35,10 @@ Use these nouns in code, commits, UI labels and the video. If a new concept appe
 | **Heartbeat** | Periodic Device telemetry: SoC, power, health, replay time. |
 | **Stale Device** | A Device that has missed N Heartbeats; excluded from Fleet State. |
 | **Degradation Ladder** | L0 Optimized → L1 Cached Plan → L2 Safe Rule → L3 Hold. |
+| **Cached Plan** | The last L0 plan's target, reusable for a few intervals (its horizon) while the feed is bad. |
+| **Safe Rule** | L2: discharge only if the last valid price is at or above the threshold; never charge. |
+| **Circuit Breaker** | Guards the replay feed: open after K failures (feed not called), half-open probe after a cooldown. |
+| **Feed Guard** | The ladder state carried between intervals: level, clean streak, breaker, recent valid prices, Cached Plan. |
 | **Chaos Scenario** | An injected fault: worker kill, partition, telemetry delay, duplicates, feed outage/outlier, scale burst. |
 | **Chaos Event** | One apply or clear of a Chaos Scenario: time, scenario, target and the interval it hit. |
 | **Chaos Script** | `scenarios/<name>.yaml`: at interval k, apply X for n intervals, over a replay window. |

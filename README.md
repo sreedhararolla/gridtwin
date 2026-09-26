@@ -79,6 +79,8 @@ make chaos SCENARIO=worker-kill   # replays a scripted scenario, prints its Scen
 make chaos SCENARIO=duplicates    # duplicate + replayed batches: effects must stay 0
 make chaos SCENARIO=partition     # 20 % of devices dark: within tolerance of achievable
 make chaos SCENARIO=telemetry-delay  # late heartbeats: stale, de-rated, 0 violations
+make chaos SCENARIO=feed-outage   # feed raises: ladder L0 -> L1 -> L2, then back to L0
+make chaos SCENARIO=feed-outlier  # $9,999 price: snapshot rejected, nothing dispatched on it
 make test-e2e                     # the same scenarios as compose-mode tests with SLO asserts
 ```
 
@@ -98,6 +100,7 @@ window:
 steps:
   - at_interval: 4                # index into the window
     apply: worker-kill            # worker-kill | duplicate-commands | partition | telemetry-delay
+                                  # | feed-outage | feed-outlier
     for_intervals: 2              # cleared (worker restarted) after n intervals of wall time
     target: worker-a              # optional; default the worker running the dispatch
     pct: 0.2                      # partition / telemetry-delay: share of Devices hit
@@ -107,7 +110,17 @@ steps:
 
 `partition`, `telemetry-delay` and `duplicate-commands` scripts also run in-process, in
 the Scenario Runner (`tests/test_scenario_partition.py`), where a step lands just after
-the interval's telemetry is read: the worst case for a partition.
+the interval's telemetry is read: the worst case for a partition. So do `feed-outage` and
+`feed-outlier` (`tests/test_scenario_feed.py`); a feed fault is on for the whole of each
+interval it covers.
+
+**Degradation Ladder.** When the feed fails or a snapshot is rejected, the Live tab's
+badge steps from L0 Optimized to L1 Cached Plan (the last good plan, for 2 intervals),
+then L2 Safe Rule (discharge only if the last valid price is at or above the threshold;
+never charge), then L3 Hold (no Commands). After 3 failures the feed's circuit breaker
+opens, and it probes the feed again 2 intervals later. After 2 clean intervals the ladder
+is back at L0. The Live tab's **Break ERCOT feed** / **Restore ERCOT feed** and
+**Inject $9,999** buttons drive this; tune it with `LADDER_*` and `FEED_*` in `.env`.
 
 The runner starts the Replay Run and applies each step when the run reaches that
 interval. When the run ends, it prints the Scenario Report, the chaos events, the retried
