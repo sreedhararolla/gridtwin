@@ -19,7 +19,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("demo")
 
 
-def build_run_input(run_id: str, day: date | None, settlement_point: str) -> ReplayRunInput:
+def build_run_input(
+    run_id: str, day: date | None, settlement_point: str, strategy: str | None = None
+) -> ReplayRunInput:
     return ReplayRunInput(
         run_id=run_id,
         settlement_point=settlement_point,
@@ -33,6 +35,8 @@ def build_run_input(run_id: str, day: date | None, settlement_point: str) -> Rep
         stale_after_seconds=settings.stale_after_seconds,
         reallocation=settings.reallocation_config(),
         ladder=settings.ladder_config(),
+        strategy=strategy or settings.strategy,
+        lp=settings.lp_config(),
     )
 
 
@@ -45,7 +49,10 @@ async def connect_temporal() -> Client:
 
 
 async def start_replay_run(
-    client: Client, day: date | None, settlement_point: str | None = None
+    client: Client,
+    day: date | None,
+    settlement_point: str | None = None,
+    strategy: str | None = None,
 ) -> str:
     point = settlement_point or settings.settlement_point
     # Fail fast (DayNotCached) before starting a workflow that could never load its day.
@@ -54,7 +61,7 @@ async def start_replay_run(
     run_id = f"demo-{suffix}-{uuid.uuid4().hex[:6]}"
     await client.start_workflow(
         ReplayRunWorkflow.run,
-        build_run_input(run_id, day, point),
+        build_run_input(run_id, day, point, strategy),
         id=f"replay:{run_id}",
         task_queue=settings.task_queue,
         task_timeout=WORKFLOW_TASK_TIMEOUT,
@@ -66,14 +73,18 @@ async def main() -> None:
     parser = argparse.ArgumentParser(prog="gridtwin.replay")
     parser.add_argument("--day", type=date.fromisoformat, default=None)
     parser.add_argument("--settlement-point", default=settings.settlement_point)
+    parser.add_argument("--strategy", choices=["naive", "lp"], default=settings.strategy)
     args = parser.parse_args()
 
-    run_id = await start_replay_run(await connect_temporal(), args.day, args.settlement_point)
+    run_id = await start_replay_run(
+        await connect_temporal(), args.day, args.settlement_point, args.strategy
+    )
     log.info(
-        "started run %s: %s at %s, %d devices in %d shards, %sx",
+        "started run %s: %s at %s, %s strategy, %d devices in %d shards, %sx",
         run_id,
         args.day or "fixture day",
         args.settlement_point,
+        args.strategy,
         settings.device_count,
         settings.shard_count,
         settings.replay_speed,

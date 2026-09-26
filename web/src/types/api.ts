@@ -214,6 +214,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/insights/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backtest */
+        get: operations["get_backtest_insights_backtest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -235,6 +252,35 @@ export interface components {
             pct?: number | null;
             /** Delay S */
             delay_s?: number | null;
+        };
+        /** BacktestReport */
+        BacktestReport: {
+            /** Settlement Point */
+            settlement_point: string;
+            /** Start Day */
+            start_day: string | null;
+            /** End Day */
+            end_day: string | null;
+            /** Fleet Mw */
+            fleet_mw: number;
+            /** Fleet Mwh */
+            fleet_mwh: number;
+            /** Start Soc Pct */
+            start_soc_pct: number;
+            /** Degradation Usd Per Mwh */
+            degradation_usd_per_mwh: number;
+            /** Naive Discharge Threshold Usd */
+            naive_discharge_threshold_usd: number;
+            /** Naive Charge Threshold Usd */
+            naive_charge_threshold_usd: number;
+            /** Lp Solve Ms P50 */
+            lp_solve_ms_p50: number;
+            /** Lp Solve Ms Max */
+            lp_solve_ms_max: number;
+            /** Summary */
+            summary: components["schemas"]["StrategySummary"][];
+            /** Days */
+            days: components["schemas"]["DayResult"][];
         };
         /** CachedDay */
         CachedDay: {
@@ -289,6 +335,28 @@ export interface components {
              * @default simulators
              */
             target: string;
+        };
+        /** DayResult */
+        DayResult: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Strategy */
+            strategy: string;
+            /** Value Usd */
+            value_usd: number;
+            /** Usd Per Mw Month */
+            usd_per_mw_month: number;
+            /** Discharged Mwh */
+            discharged_mwh: number;
+            /** Charged Mwh */
+            charged_mwh: number;
+            /** Intervals */
+            intervals: number;
+            /** Forecast Source */
+            forecast_source: string;
         };
         /** DependencyStatus */
         DependencyStatus: {
@@ -430,6 +498,21 @@ export interface components {
              * @default
              */
             feed_detail: string;
+            /**
+             * Strategy
+             * @default
+             */
+            strategy: string;
+            /**
+             * Forecast Source
+             * @default
+             */
+            forecast_source: string;
+            /**
+             * Plan Mw
+             * @default []
+             */
+            plan_mw: number[];
         };
         /** LatestRun */
         LatestRun: {
@@ -525,11 +608,28 @@ export interface components {
             day?: string | null;
             /** Settlement Point */
             settlement_point?: string | null;
+            /** Strategy */
+            strategy?: ("naive" | "lp") | null;
         };
         /** StartedRun */
         StartedRun: {
             /** Run Id */
             run_id: string;
+        };
+        /** StrategySummary */
+        StrategySummary: {
+            /** Strategy */
+            strategy: string;
+            /** Days */
+            days: number;
+            /** Value Usd */
+            value_usd: number;
+            /** Usd Per Mw Month */
+            usd_per_mw_month: number;
+            /** Discharged Mwh */
+            discharged_mwh: number;
+            /** Share Of Perfect Foresight Pct */
+            share_of_perfect_foresight_pct: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -906,6 +1006,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backtest_insights_backtest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacktestReport"];
                 };
             };
         };

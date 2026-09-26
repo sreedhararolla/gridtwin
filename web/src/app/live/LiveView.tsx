@@ -66,6 +66,12 @@ export function LiveView() {
           {latest ? (
             <span className="flex items-center gap-3 text-xs text-slate-500">
               <DegradationBadge latest={latest} />
+              {latest.strategy ? (
+                <span className="rounded border border-slate-700 px-2 py-0.5 text-slate-300">
+                  strategy {latest.strategy}
+                  {latest.forecast_source ? ` · ${latest.forecast_source}` : ""}
+                </span>
+              ) : null}
               {results.length} intervals · {connected ? "live" : "reconnecting"}
             </span>
           ) : null}

@@ -11,7 +11,6 @@ from datetime import date
 
 import pytest
 
-from gridtwin.fleet.models import DeviceState
 from gridtwin.marketdata.fixtures import load_fixture_day
 from gridtwin.planner.backtest import backtest_day, execute, fit_forecast, naive_schedule
 from gridtwin.planner.lp import (
@@ -157,20 +156,21 @@ def test_lp_holds_charge_into_a_forecast_spike():
 
 
 def test_lp_strategy_clips_to_this_intervals_headroom():
-    devices = [
-        DeviceState(
-            device_id=f"d{i}",
-            soc_pct=0.9,
-            energy_kwh=39.2,
-            max_power_kw=10.0,
-            round_trip_efficiency=0.9,
-            reserve_floor_pct=0.2,
-        )
-        for i in range(10)
-    ]
-    state = FleetState(discharge_headroom_mw=0.05, charge_headroom_mw=0.0, devices=devices)
-    plan = lp_strategy(state, [3000.0] + [10.0] * 95, CONFIG)
+    # 10 Devices at 90% SoC; the planner sees aggregates only (with_reserve drops devices).
+    state = FleetState(
+        discharge_headroom_mw=0.05,
+        charge_headroom_mw=0.0,
+        devices=[],
+        capacity_mwh=0.392,
+        energy_mwh=0.3528,
+        floor_mwh=0.0784,
+        max_power_mw=0.1,
+        round_trip_efficiency=0.9,
+    )
+    plan = lp_strategy(state, [3000.0] + [10.0] * 95, CONFIG, "dam_spp")
     assert plan.strategy == "lp"
+    assert plan.forecast_source == "dam_spp"
+    assert len(plan.horizon_mw) == 96
     assert plan.target_mw == pytest.approx(0.05)  # wants 0.1 MW, headroom allows 0.05
 
 

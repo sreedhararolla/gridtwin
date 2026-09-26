@@ -11,6 +11,10 @@ export type ChaosEvent = components["schemas"]["ChaosEvent"];
 export type SloReport = components["schemas"]["SloReport"];
 export type LedgerIntervalSummary = components["schemas"]["LedgerIntervalSummary"];
 export type ScenarioName = components["schemas"]["ApplyChaosRequest"]["scenario"];
+export type Strategy = NonNullable<components["schemas"]["StartRunRequest"]["strategy"]>;
+export type BacktestReport = components["schemas"]["BacktestReport"];
+export type StrategySummary = components["schemas"]["StrategySummary"];
+export type DayResult = components["schemas"]["DayResult"];
 
 export async function fetchLedger(runId: string): Promise<LedgerIntervalSummary[]> {
   const res = await fetch(`${API_BASE_URL}/runs/${encodeURIComponent(runId)}/ledger`, {
@@ -68,14 +72,23 @@ export async function fetchSlo(runId: string): Promise<SloReport> {
   return (await res.json()) as SloReport;
 }
 
-export async function startRun(day: string): Promise<StartedRun> {
+export async function startRun(day: string, strategy: Strategy): Promise<StartedRun> {
+  const body: components["schemas"]["StartRunRequest"] = { day, strategy };
   const res = await fetch(`${API_BASE_URL}/runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ day }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`start run failed: ${res.status}`);
   return (await res.json()) as StartedRun;
+}
+
+// null = no backtest yet (`make backtest` has not been run).
+export async function fetchBacktest(): Promise<BacktestReport | null> {
+  const res = await fetch(`${API_BASE_URL}/insights/backtest`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`backtest failed: ${res.status}`);
+  return (await res.json()) as BacktestReport;
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {

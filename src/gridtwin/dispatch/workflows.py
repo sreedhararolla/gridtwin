@@ -36,7 +36,7 @@ from gridtwin.fleet.reallocate import (
     with_reserve,
 )
 from gridtwin.ledger.models import IntervalResult
-from gridtwin.planner.models import FleetPlan, FleetState
+from gridtwin.planner.models import FleetPlan, FleetState, LpConfig
 from gridtwin.replay.breaker import allow, record_failure, record_success
 from gridtwin.replay.feed import FeedReading, remember, validate_snapshot
 from gridtwin.replay.models import FeedError, MarketSnapshot
@@ -88,6 +88,8 @@ class MarketIntervalInput(BaseModel, frozen=True):
     reallocation: ReallocationConfig = ReallocationConfig()
     ladder: LadderConfig = LadderConfig()
     guard: FeedGuard = FeedGuard()  # the ladder state the previous interval left
+    strategy: str = "naive"
+    lp: LpConfig = LpConfig()
 
 
 class ReplayRunInput(BaseModel):
@@ -106,6 +108,8 @@ class ReplayRunInput(BaseModel):
     reallocation: ReallocationConfig = ReallocationConfig()
     ladder: LadderConfig = LadderConfig()
     guard: FeedGuard = FeedGuard()  # carried across continue-as-new
+    strategy: str = "naive"  # naive | lp
+    lp: LpConfig = LpConfig()
 
 
 class IntervalOutcome(BaseModel, frozen=True):
@@ -155,14 +159,18 @@ class MarketIntervalWorkflow:
         # the reserve that gives Reallocation somewhere to go.
         planning_state = with_reserve(fleet_state, input.reallocation.reserve_pct)
         target: float | None
+        plan: FleetPlan | None = None
         if level == "L0" and snapshot is not None:
             plan = await workflow.execute_activity(
                 "build_plan",
                 args=[
                     planning_state,
                     snapshot,
+                    input.strategy,
                     input.discharge_threshold_usd,
                     input.charge_threshold_usd,
+                    input.lp,
+                    input.fixture_path,
                 ],
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
                 retry_policy=RETRY_POLICY,
@@ -251,6 +259,10 @@ class MarketIntervalWorkflow:
             reallocated_devices=len(reallocated_devices),
             feed_status=feed_status,
             feed_detail=feed_detail,
+            # Below L0 the ladder, not a Strategy, set the target: no plan to audit.
+            strategy=plan.strategy if plan else "",
+            forecast_source=plan.forecast_source if plan else "",
+            plan_mw=plan.horizon_mw if plan else [],
         )
         await workflow.execute_activity(
             "record_interval_result",
@@ -401,6 +413,8 @@ class ReplayRunWorkflow:
                     reallocation=input.reallocation,
                     ladder=input.ladder,
                     guard=guard,
+                    strategy=input.strategy,
+                    lp=input.lp,
                 ),
                 id=f"interval:{input.run_id}:{interval_start.isoformat()}",
                 # A second start of the same interval id is rejected outright, not just

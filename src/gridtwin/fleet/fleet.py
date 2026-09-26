@@ -58,12 +58,23 @@ def fleet_state_from_telemetry(
     energy_mwh = sum(
         max(d.soc_pct - d.reserve_floor_pct, 0.0) * d.energy_kwh / 1000.0 for d in devices
     )
+    capacity_mwh = sum(d.energy_kwh for d in devices) / 1000.0
     return FleetState(
         discharge_headroom_mw=discharge_mw,
         charge_headroom_mw=charge_mw,
         energy_above_floor_mwh=energy_mwh,
         devices=devices,
         stale_devices=len(heartbeats) - len(devices),
+        capacity_mwh=capacity_mwh,
+        energy_mwh=sum(d.soc_pct * d.energy_kwh for d in devices) / 1000.0,
+        floor_mwh=sum(d.reserve_floor_pct * d.energy_kwh for d in devices) / 1000.0,
+        max_power_mw=sum(d.max_power_kw for d in devices) / 1000.0,
+        # Capacity-weighted, so the aggregate loses what its Devices would.
+        round_trip_efficiency=(
+            sum(d.round_trip_efficiency * d.energy_kwh for d in devices) / (capacity_mwh * 1000)
+            if capacity_mwh > 0
+            else 1.0
+        ),
     )
 
 

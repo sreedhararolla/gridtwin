@@ -2,7 +2,7 @@
 
 Primary: the DAM SPP (hourly, published the day before) for the interval's hour, when the
 day is in the `dam_spp` cache. Fallback: persistence, the RT price at the same interval one
-day earlier (always known in time). See ADR-013 in docs/DECISIONS.md.
+day earlier (always known in time). See ADR-014 in docs/DECISIONS.md.
 """
 
 from datetime import date, datetime, timedelta

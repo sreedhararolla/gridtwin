@@ -38,6 +38,44 @@ You can also pick a day on the **Live** page and press **Replay**. Each interval
 shows the fleet SoC band (p10/median/p90), how many devices are online, and each
 interval's dispatch latency against its 15 s wall budget.
 
+## Strategies and backtest
+
+```
+make backtest                         # naive vs LP vs perfect foresight over the cached window
+make demo DAY=2026-01-28              # then pick "lp" in the Live page's Strategy selector
+uv run python -m gridtwin.replay.cli --day 2026-01-28 --strategy lp   # or from the CLI
+```
+
+- **`naive`** discharges fully at or above $90/MWh and charges at or below $20/MWh.
+- **`lp`** is a rolling-horizon linear program (HiGHS via scipy) on the fleet aggregate. It
+  plans 96 intervals ahead on the day-ahead (DAM SPP) price and acts on the first.
+- **`perfect_foresight`** is the same LP on the actual RT prices. It is an upper bound
+  and is not dispatchable.
+
+The Insights page renders the backtest. Result at `LZ_HOUSTON`, 2025-12-05 → 2026-09-25
+(295 days): 20 MW / 78.4 MWh fleet aggregate, each day from 50% SoC, $10/MWh degradation.
+
+| Strategy | Value | $/MW-month | % of perfect foresight |
+|---|---|---|---|
+| naive | $231,106 | $1,192 | 31.1% |
+| lp (DAM forecast) | $421,167 | $2,173 | 56.7% |
+| perfect foresight | $742,738 | $3,832 | 100% |
+
+Perfect foresight is ≥ every other Strategy on every one of the 295 days. A 96-interval
+solve takes 17.5 ms p50 and 30.8 ms max, against a 200 ms budget.
+
+**Honest caveats.**
+- The LP beats naive in aggregate only because it plans on the DAM price. On a
+  persistence forecast (yesterday's RT), which we tried before backfilling DAM, it *lost*
+  to naive: $932 vs $1,250/MW-month. RT spikes are mostly not in yesterday's prices, and
+  the LP spent energy on the wrong hours.
+- Even with DAM, the LP captures only 57% of perfect foresight. RT scarcity spikes are
+  largely not priced day-ahead. That gap is exactly what the scarcity-risk model (ticket
+  10) is for.
+- The backtest runs at fleet-aggregate level, without device noise or dropouts. Energy
+  left at day end is valued at the day's median DAM price for every Strategy alike.
+- See ADR-014 in `docs/DECISIONS.md`.
+
 ## Chaos
 
 During a replay, press **Kill worker** in the Live page's chaos panel. The chaos

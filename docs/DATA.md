@@ -24,6 +24,13 @@ Mar 8, 2026 has 92 intervals. gridstatus's own `get_rtm_spp(year)` crashes
 on current pandas, so `marketdata/rtm_history.py` parses the workbook
 itself. Days already cached from the daily fetch are kept as-is.
 
+**DAM SPP backfill.** Same story for the day-ahead market: `backfill-dam-spp`
+(also in `make data`) fills missing `dam_spp` days from the yearly **`NP4-180-ER`**
+"Historical DAM Load Zone and Hub Prices" workbook (hourly, hour-ending Central, same
+`Repeated Hour Flag` handling; tagged `source=ercot_historical`). As of ticket 09 the
+cache holds DAM SPP for 2025-12-05 → 2026-09-25. The LP planner's price forecast reads
+it (`marketdata/forecast.py`, ADR-014).
+
 As of ticket 04 the cache holds real RT SPP for 2025-12-05 → 2026-09-25
 (`demo-days` #1 at `LZ_HOUSTON`: **2026-01-28**, max $1,284.81/MWh).
 

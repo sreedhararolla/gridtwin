@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 from scipy.sparse import csr_matrix, hstack, identity, vstack
 
-from gridtwin.planner.models import FleetPlan, FleetState
+from gridtwin.planner.models import FleetPlan, FleetState, LpConfig
 
 INTERVAL_HOURS = 0.25
 # A tiny wear cost on charging too, so the solver never charges and discharges in the
@@ -54,11 +54,6 @@ class Schedule(BaseModel, frozen=True):
     @property
     def target_mw(self) -> list[float]:
         return [d - c for c, d in zip(self.charge_mw, self.discharge_mw, strict=True)]
-
-
-class LpConfig(BaseModel, frozen=True):
-    degradation_usd_per_mwh: float = 10.0  # per MWh discharged
-    horizon_intervals: int = 96
 
 
 def terminal_value(prices: list[float]) -> float:
@@ -177,24 +172,15 @@ def schedule_value(
 
 
 def aggregate_of(fleet_state: FleetState) -> FleetAggregate:
-    """The live Fleet State as one battery. Power limits are this interval's headroom (so
-    the Reallocation reserve is respected); energy comes from the non-stale Devices."""
-    devices = fleet_state.devices
-    capacity = sum(d.energy_kwh for d in devices) / 1000.0
-    energy = sum(d.energy_kwh * d.soc_pct for d in devices) / 1000.0
-    floor = sum(d.energy_kwh * d.reserve_floor_pct for d in devices) / 1000.0
-    rte = (
-        sum(d.round_trip_efficiency * d.energy_kwh for d in devices) / (capacity * 1000.0)
-        if capacity > 0
-        else 1.0
-    )
+    """The live Fleet State (non-stale Devices) as one battery. The plan's first interval
+    is clipped to headroom afterwards, which respects the Reallocation reserve."""
     return FleetAggregate(
-        max_discharge_mw=sum(d.max_power_kw for d in devices) / 1000.0,
-        max_charge_mw=sum(d.max_power_kw for d in devices) / 1000.0,
-        capacity_mwh=capacity,
-        floor_mwh=floor,
-        energy_mwh=energy,
-        round_trip_efficiency=rte,
+        max_discharge_mw=fleet_state.max_power_mw,
+        max_charge_mw=fleet_state.max_power_mw,
+        capacity_mwh=fleet_state.capacity_mwh,
+        floor_mwh=fleet_state.floor_mwh,
+        energy_mwh=fleet_state.energy_mwh,
+        round_trip_efficiency=fleet_state.round_trip_efficiency,
     )
 
 
@@ -202,14 +188,19 @@ def lp_strategy(
     fleet_state: FleetState,
     forecast_usd_per_mwh: list[float],
     config: LpConfig,
-    strategy: str = "lp",
+    forecast_source: str = "",
 ) -> FleetPlan:
     """Rolling horizon: solve over the forecast from this interval on, act on the first
     interval only, and clip it to this interval's headroom."""
     horizon = forecast_usd_per_mwh[: config.horizon_intervals]
-    if not horizon or not fleet_state.devices:
-        return FleetPlan(target_mw=0.0, strategy=strategy)
+    if not horizon or fleet_state.capacity_mwh <= 0:
+        return FleetPlan(target_mw=0.0, strategy="lp", forecast_source=forecast_source)
     schedule = solve(horizon, aggregate_of(fleet_state), config, terminal_value(horizon))
     target = schedule.target_mw[0]
     target = min(max(target, -fleet_state.charge_headroom_mw), fleet_state.discharge_headroom_mw)
-    return FleetPlan(target_mw=target, strategy=strategy)
+    return FleetPlan(
+        target_mw=target,
+        strategy="lp",
+        horizon_mw=[round(mw, 3) for mw in schedule.target_mw],
+        forecast_source=forecast_source,
+    )

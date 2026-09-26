@@ -15,8 +15,10 @@ from gridtwin.fleet.fleet import build_fleet, fleet_state_from_telemetry
 from gridtwin.fleet.models import Command, FleetConfig, ShardReset
 from gridtwin.ledger.models import IntervalResult
 from gridtwin.ledger.repo import LedgerRepo
+from gridtwin.marketdata.forecast import forecast_prices
 from gridtwin.marketdata.prices import load_day_prices
-from gridtwin.planner.models import FleetPlan, FleetState
+from gridtwin.planner.lp import lp_strategy
+from gridtwin.planner.models import FleetPlan, FleetState, LpConfig
 from gridtwin.planner.naive import naive_strategy
 from gridtwin.replay.feed import FeedReading
 from gridtwin.replay.models import MarketSnapshot
@@ -152,9 +154,25 @@ class DispatchActivities:
         self,
         fleet_state: FleetState,
         snapshot: MarketSnapshot,
+        strategy: str,
         discharge_threshold_usd: float,
         charge_threshold_usd: float,
+        lp: LpConfig,
+        fixture_path: str,
     ) -> FleetPlan:
+        """The Strategy's Fleet Plan. `lp` reads its horizon's price forecast from the cache
+        (IO, so here and not in the pure planner); with no forecast at all it falls back to
+        naive, and the plan's `strategy` says so."""
+        if strategy == "lp":
+            starts = [
+                snapshot.interval_start + timedelta(minutes=INTERVAL_MINUTES * k)
+                for k in range(lp.horizon_intervals)
+            ]
+            forecast, source = await asyncio.to_thread(
+                forecast_prices, snapshot.settlement_point, starts, fixture_path
+            )
+            if source != "none":
+                return await asyncio.to_thread(lp_strategy, fleet_state, forecast, lp, source)
         return naive_strategy(fleet_state, snapshot, discharge_threshold_usd, charge_threshold_usd)
 
     @activity.defn

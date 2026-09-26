@@ -3,6 +3,7 @@ Live-tab stream (ADR-003: the browser connects straight to FastAPI, not through 
 
 import asyncio
 from datetime import date
+from typing import Literal
 
 import nats
 from fastapi import APIRouter, HTTPException
@@ -27,6 +28,7 @@ class LatestRun(BaseModel):
 class StartRunRequest(BaseModel):
     day: date | None = None  # a cached day (Central-time trading day); None = fixture day
     settlement_point: str | None = None
+    strategy: Literal["naive", "lp"] | None = None  # None = the STRATEGY setting
 
 
 class StartedRun(BaseModel):
@@ -38,7 +40,7 @@ async def start_run(request: StartRunRequest) -> StartedRun:
     """The Live tab's day picker: replay any cached day with the full fleet."""
     try:
         run_id = await start_replay_run(
-            await connect_temporal(), request.day, request.settlement_point
+            await connect_temporal(), request.day, request.settlement_point, request.strategy
         )
     except DayNotCached as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

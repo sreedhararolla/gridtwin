@@ -95,3 +95,8 @@ class IntervalResult(BaseModel, frozen=True):
     # feed_status: ok | rejected (validator) | outage (feed raised) | circuit-open.
     feed_status: str = "ok"
     feed_detail: str = ""  # why the snapshot was not used
+    # The plan used this interval, for audit (ticket 09): the Strategy that produced it
+    # ("" below L0), what its prices came from, and its whole horizon in MW (lp only).
+    strategy: str = ""
+    forecast_source: str = ""
+    plan_mw: list[float] = []

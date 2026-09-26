@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from gridtwin.dispatch.ladder import LadderConfig
 from gridtwin.fleet.models import FleetConfig
 from gridtwin.fleet.reallocate import ReallocationConfig
-from gridtwin.planner.lp import LpConfig
+from gridtwin.planner.models import LpConfig
 from gridtwin.replay.breaker import BreakerConfig
 from gridtwin.replay.feed import ValidatorConfig
 from gridtwin.telemetry.staleness import stale_after_seconds

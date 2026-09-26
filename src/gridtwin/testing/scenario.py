@@ -152,6 +152,7 @@ async def run_scenario(
     telemetry_delay_s: float = 10.0,
     telemetry_delay_pct: float = 0.3,
     ladder: LadderConfig | None = None,
+    strategy: str = "naive",
 ) -> ScenarioResult:
     """`duplicate_commands` runs the whole replay under the duplicate-commands Chaos
     Scenario; `partial_send_failures` = n makes the first n Shard batches fail after a
@@ -205,6 +206,7 @@ async def run_scenario(
                 interval_starts=window,
                 reallocation=reallocation or ReallocationConfig(tolerance_pct=tolerance_pct),
                 ladder=ladder or LadderConfig(),
+                strategy=strategy,
             )
             handle = await env.client.start_workflow(
                 ReplayRunWorkflow.run,
