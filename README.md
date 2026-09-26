@@ -20,9 +20,23 @@ Then open:
 ## What's running
 
 `make up` starts Postgres, NATS, the Temporal dev server, the FastAPI backend, two
-worker replicas, two fleet-simulator replicas and the Next.js dashboard. The
-dashboard's **Live** page shows a green/red status dot per dependency and a
-`ready/total` count for workers and simulators, polled every 2s.
+worker replicas, two fleet-simulator replicas (2,000 devices in 20 shards, 10 shards
+each), the telemetry ingester and the Next.js dashboard. The dashboard's **Live** page
+shows a green/red status dot per dependency and a `ready/total` count for workers and
+simulators, polled every 2s.
+
+## Replay any day
+
+```
+make data                     # cache real ERCOT RT prices (keyless; needs a US IP)
+uv run python -m gridtwin.marketdata.cli demo-days   # rank cached days by spike
+make demo DAY=2026-01-28      # replay one cached day at 60x with the full fleet
+```
+
+You can also pick a day on the **Live** page and press **Replay**. Each interval runs
+20 shard dispatch activities at once; you can see them in the Temporal UI. The Live page
+shows the fleet SoC band (p10/median/p90), how many devices are online, and each
+interval's dispatch latency against its 15 s wall budget.
 
 ## Development
 

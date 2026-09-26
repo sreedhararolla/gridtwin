@@ -199,6 +199,7 @@ class ReplayRunWorkflow:
         processed = 0
         while remaining and processed < CONTINUE_AS_NEW_EVERY:
             interval_start = remaining.pop(0)
+            started = workflow.now()
             await workflow.execute_child_workflow(
                 MarketIntervalWorkflow.run,
                 MarketIntervalInput(
@@ -220,7 +221,11 @@ class ReplayRunWorkflow:
             )
             processed += 1
             if remaining:
-                await workflow.sleep(seconds_per_interval)
+                # Hold the replay cadence: the interval's dispatch time comes out of its
+                # wall budget instead of being added on top of it.
+                remaining_budget = seconds_per_interval - (workflow.now() - started).total_seconds()
+                if remaining_budget > 0:
+                    await workflow.sleep(remaining_budget)
 
         if remaining:
             workflow.continue_as_new(

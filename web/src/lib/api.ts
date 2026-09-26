@@ -6,6 +6,17 @@ export type IntervalResult = components["schemas"]["IntervalResult"];
 export type LatestRun = components["schemas"]["LatestRun"];
 export type CachedDay = components["schemas"]["CachedDay"];
 export type PricePoint = components["schemas"]["PricePoint"];
+export type StartedRun = components["schemas"]["StartedRun"];
+
+export async function startRun(day: string): Promise<StartedRun> {
+  const res = await fetch(`${API_BASE_URL}/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ day }),
+  });
+  if (!res.ok) throw new Error(`start run failed: ${res.status}`);
+  return (await res.json()) as StartedRun;
+}
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE_URL}/health`, { cache: "no-store" });

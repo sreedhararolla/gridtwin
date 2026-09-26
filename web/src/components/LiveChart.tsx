@@ -11,18 +11,11 @@ import {
   YAxis,
 } from "recharts";
 import type { IntervalResult } from "@/lib/api";
+import { formatCentralTime } from "@/lib/format";
 
 // Same colour meaning on every chart (CLAUDE.md): one colour each for price, target and
 // delivered. Keep these in sync with web/tailwind.config.ts.
 const COLORS = { price: "#38bdf8", target: "#a78bfa", delivered: "#f59e0b" };
-
-function formatCentralTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Chicago",
-  });
-}
 
 function formatTooltipValue(value: number, name: string): [string, string] {
   if (name === "price") return [`$${value.toFixed(2)}/MWh`, "Price"];

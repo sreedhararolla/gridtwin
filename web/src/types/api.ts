@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Run
+         * @description The Live tab's day picker: replay any cached day with the full fleet.
+         */
+        post: operations["start_run_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/latest": {
         parameters: {
             query?: never;
@@ -175,6 +195,36 @@ export interface components {
             reserve_violations: number;
             /** Latency Ms */
             latency_ms: number;
+            /**
+             * Budget Ms
+             * @default 0
+             */
+            budget_ms: number;
+            /**
+             * Online Devices
+             * @default 0
+             */
+            online_devices: number;
+            /**
+             * Shard Count
+             * @default 0
+             */
+            shard_count: number;
+            /**
+             * Soc P10 Pct
+             * @default 0
+             */
+            soc_p10_pct: number;
+            /**
+             * Soc P50 Pct
+             * @default 0
+             */
+            soc_p50_pct: number;
+            /**
+             * Soc P90 Pct
+             * @default 0
+             */
+            soc_p90_pct: number;
         };
         /** LatestRun */
         LatestRun: {
@@ -201,6 +251,18 @@ export interface components {
             ready: number;
             /** Total */
             total: number;
+        };
+        /** StartRunRequest */
+        StartRunRequest: {
+            /** Day */
+            day?: string | null;
+            /** Settlement Point */
+            settlement_point?: string | null;
+        };
+        /** StartedRun */
+        StartedRun: {
+            /** Run Id */
+            run_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -240,6 +302,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    start_run_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartedRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

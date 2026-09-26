@@ -10,6 +10,7 @@ const config: Config = {
         price: "#38bdf8",
         target: "#a78bfa",
         delivered: "#f59e0b",
+        soc: "#34d399",
       },
     },
   },

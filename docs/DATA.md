@@ -4,12 +4,28 @@ The ingest cache is DuckDB + Parquet under `data/cache/` (never committed —
 see `.gitignore`). One Parquet file per dataset, per key, per day:
 `data/cache/<dataset>/<key>/<YYYY-MM-DD>.parquet`. Every row carries a
 `regime` column (`post_rtcb` from 2025-12-05 onward, else `pre_rtcb`) and a
-`source` column (`ercot_live`, `open_meteo` or `fixture_seed`).
+`source` column (`ercot_live`, `ercot_historical`, `open_meteo` or
+`fixture_seed`).
 
-Run `uv run python -m gridtwin.marketdata.cli ingest` (`make data`) to
-populate it, `... audit` to see gaps, `... demo-days` to rank cached days,
-and `... seed-fixture-day` to seed one demo day from the checked-in fixture
-while ERCOT is unreachable (see ADR-008 below).
+Run `make data` to populate it: `... ingest` (add `--datasets rt_spp` to
+limit it) then `... backfill-rt-spp`. Use `... audit` to see gaps,
+`... demo-days` to rank cached days, and `... seed-fixture-day` to seed one
+demo day from the checked-in fixture (tests/offline only; see ADR-008 below).
+
+**RT SPP backfill.** ERCOT's MIS keeps only the last ~9 days of the daily
+`NP6-905-CD` documents, so the daily fetch reports `No objects to
+concatenate` for anything older. `backfill-rt-spp` fills every missing day
+from ERCOT's yearly **`NP6-785-ER`** "Historical RTM Load Zone and Hub
+Prices" workbook (keyless; tagged `source=ercot_historical`). That workbook
+lists each load zone twice; we keep type `LZ` (the settlement price) and
+drop `LZEW` (energy-weighted). Hours are hour-ending Central time; the
+repeated fall-back hour is disambiguated by `Repeated Hour Flag`, so
+Mar 8, 2026 has 92 intervals. gridstatus's own `get_rtm_spp(year)` crashes
+on current pandas, so `marketdata/rtm_history.py` parses the workbook
+itself. Days already cached from the daily fetch are kept as-is.
+
+As of ticket 04 the cache holds real RT SPP for 2025-12-05 → 2026-09-25
+(`demo-days` #1 at `LZ_HOUSTON`: **2026-01-28**, max $1,284.81/MWh).
 
 ## Datasets
 
@@ -27,6 +43,11 @@ while ERCOT is unreachable (see ADR-008 below).
 | `weather_temperature` | Open-Meteo hourly archive | `weather_source.fetch_temperature` (keyless, no key) | `houston`, `dfw`, `austin`, `san_antonio` | 2025-12-05 → latest (or `--include-pre-rtcb`) | Only hourly temperature is cached; Open-Meteo's other variables (wind, irradiance) are out of scope for this build. |
 
 ## ADR-008: ERCOT is unreachable from the ticket-03 build sandbox
+
+**Amended in ticket 04:** the block was the build machine's VPN egressing
+in Japan, not ERCOT. From a US egress (`curl -s https://ipinfo.io/country`
+prints `US`) the keyless fetches work, and the cache now holds real days.
+If an ingest returns 403 again, check that probe first.
 
 See `docs/DECISIONS.md` ADR-008 for the full account. In short: every
 ERCOT-owned host (`www.ercot.com`, `mis.ercot.com`, `api.ercot.com`,

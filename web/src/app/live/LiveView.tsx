@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DependencyPanel } from "@/components/DependencyPanel";
+import { FleetReadouts } from "@/components/FleetReadouts";
 import { LiveChart } from "@/components/LiveChart";
+import { ReplayPicker } from "@/components/ReplayPicker";
+import { SocBandChart } from "@/components/SocBandChart";
 import { fetchLatestRun } from "@/lib/api";
 import { useIntervalResults } from "@/lib/useIntervalResults";
 
 const LATEST_RUN_POLL_MS = 3000;
 
 export function LiveView() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const runParam = searchParams.get("run");
   const [runId, setRunId] = useState<string | null>(runParam);
@@ -47,6 +51,9 @@ export function LiveView() {
         <DependencyPanel />
       </section>
       <section className="flex flex-col gap-3">
+        <ReplayPicker onStarted={(id) => router.push(`/live?run=${encodeURIComponent(id)}`)} />
+      </section>
+      <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-slate-400">
             {runId ? `Run ${runId}` : "Waiting for a replay run…"}
@@ -59,10 +66,15 @@ export function LiveView() {
           ) : null}
         </div>
         {runId ? (
-          <LiveChart results={results} />
+          <>
+            <FleetReadouts results={results} />
+            <LiveChart results={results} />
+            <h3 className="text-sm font-medium text-slate-400">Fleet SoC (p10 / median / p90)</h3>
+            <SocBandChart results={results} />
+          </>
         ) : (
           <p className="text-sm text-slate-500">
-            Run <code>make demo</code> to start a replay.
+            Pick a day above, or run <code>make demo DAY=YYYY-MM-DD</code>.
           </p>
         )}
       </section>
