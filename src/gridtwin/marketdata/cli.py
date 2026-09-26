@@ -4,6 +4,7 @@ uv run python -m gridtwin.marketdata.cli ingest
 uv run python -m gridtwin.marketdata.cli audit
 uv run python -m gridtwin.marketdata.cli demo-days
 uv run python -m gridtwin.marketdata.cli backfill-rt-spp
+uv run python -m gridtwin.marketdata.cli backfill-dam-spp
 uv run python -m gridtwin.marketdata.cli seed-fixture-day
 """
 
@@ -12,6 +13,7 @@ import logging
 from datetime import date
 
 from gridtwin.marketdata.audit import build_audit, format_audit
+from gridtwin.marketdata.dam_history import backfill_dam_spp
 from gridtwin.marketdata.demo_days import rank_cached_days
 from gridtwin.marketdata.fixture_seed import seed_fixture_day
 from gridtwin.marketdata.ingest import default_window, run_ingest
@@ -69,6 +71,12 @@ def cmd_backfill_rt_spp(args: argparse.Namespace) -> None:
     print(f"backfilled {written} rt_spp days from the yearly NP6-785-ER report")
 
 
+def cmd_backfill_dam_spp(args: argparse.Namespace) -> None:
+    default_start, default_end = default_window()
+    written = backfill_dam_spp(args.start or default_start, args.end or default_end)
+    print(f"backfilled {written} dam_spp days from the yearly NP4-180-ER report")
+
+
 def cmd_seed_fixture_day(_args: argparse.Namespace) -> None:
     seed_fixture_day()
     print("seeded the ADR-007 fixture day into the rt_spp cache (source=fixture_seed)")
@@ -97,6 +105,10 @@ def main() -> None:
     backfill_parser = subparsers.add_parser("backfill-rt-spp")
     _add_window_args(backfill_parser)
     backfill_parser.set_defaults(func=cmd_backfill_rt_spp)
+
+    dam_backfill_parser = subparsers.add_parser("backfill-dam-spp")
+    _add_window_args(dam_backfill_parser)
+    dam_backfill_parser.set_defaults(func=cmd_backfill_dam_spp)
 
     seed_parser = subparsers.add_parser("seed-fixture-day")
     seed_parser.set_defaults(func=cmd_seed_fixture_day)

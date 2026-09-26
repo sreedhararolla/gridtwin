@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from gridtwin.dispatch.ladder import LadderConfig
 from gridtwin.fleet.models import FleetConfig
 from gridtwin.fleet.reallocate import ReallocationConfig
+from gridtwin.planner.lp import LpConfig
 from gridtwin.replay.breaker import BreakerConfig
 from gridtwin.replay.feed import ValidatorConfig
 from gridtwin.telemetry.staleness import stale_after_seconds
@@ -55,6 +56,11 @@ class Settings(BaseSettings):
 
     naive_discharge_threshold_usd: float = 90.0
     naive_charge_threshold_usd: float = 20.0
+    # LP planner (ticket 09): the Strategy a Replay Run uses unless the Live tab picks one,
+    # the rolling horizon, and the degradation cost per MWh discharged.
+    strategy: str = "naive"
+    planner_horizon_intervals: int = 96
+    planner_degradation_usd_per_mwh: float = 10.0
 
     dispatch_timeout_seconds: float = 5.0
     tolerance_pct: float = 0.05
@@ -120,6 +126,12 @@ class Settings(BaseSettings):
             self.replay_speed,
             self.telemetry_stale_heartbeats,
             self.telemetry_flush_seconds,
+        )
+
+    def lp_config(self) -> LpConfig:
+        return LpConfig(
+            degradation_usd_per_mwh=self.planner_degradation_usd_per_mwh,
+            horizon_intervals=self.planner_horizon_intervals,
         )
 
     def reallocation_config(self) -> ReallocationConfig:
