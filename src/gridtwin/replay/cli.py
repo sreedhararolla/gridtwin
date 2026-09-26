@@ -11,7 +11,7 @@ from datetime import date
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 
-from gridtwin.dispatch.workflows import ReplayRunInput, ReplayRunWorkflow
+from gridtwin.dispatch.workflows import WORKFLOW_TASK_TIMEOUT, ReplayRunInput, ReplayRunWorkflow
 from gridtwin.marketdata.prices import load_day_prices
 from gridtwin.settings import settings
 
@@ -55,6 +55,7 @@ async def start_replay_run(
         build_run_input(run_id, day, point),
         id=f"replay:{run_id}",
         task_queue=settings.task_queue,
+        task_timeout=WORKFLOW_TASK_TIMEOUT,
     )
     return run_id
 

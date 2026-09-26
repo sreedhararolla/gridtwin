@@ -5,6 +5,7 @@ and reports liveness via heartbeat. At least two replicas poll the same task que
 import asyncio
 import logging
 import sys
+from datetime import timedelta
 
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
@@ -56,6 +57,11 @@ async def main() -> None:
         activities=activities.all(),
         # 20 shard activities per interval run concurrently across the two workers.
         max_concurrent_activities=64,
+        # The chaos controller maps Temporal's worker identity to the container to kill,
+        # and Temporal history shows which worker ran each attempt.
+        identity=instance_id,
+        # A workflow cached on a killed worker moves to the survivor after this, not 10 s.
+        sticky_queue_schedule_to_start_timeout=timedelta(seconds=2),
     )
     await asyncio.gather(heartbeat_loop(instance_id), worker.run())
 

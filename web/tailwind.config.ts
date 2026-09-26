@@ -11,6 +11,7 @@ const config: Config = {
         target: "#a78bfa",
         delivered: "#f59e0b",
         soc: "#34d399",
+        chaos: "#f472b6",
       },
     },
   },

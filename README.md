@@ -38,10 +38,63 @@ You can also pick a day on the **Live** page and press **Replay**. Each interval
 shows the fleet SoC band (p10/median/p90), how many devices are online, and each
 interval's dispatch latency against its 15 s wall budget.
 
+## Chaos
+
+During a replay, press **Kill worker** in the Live page's chaos panel. The chaos
+controller waits until one of the run's Shard dispatch activities is running, then
+SIGKILLs the worker that is running it. The worker dot drops to 1/2, Temporal retries the
+lost activities on the surviving worker, and no interval is skipped. The worker restarts
+after `CHAOS_RESTART_DELAY_SECONDS` (20 s by default). The event timeline records each
+chaos event's time, scenario and target. The SLO table compares target with actual for
+within-tolerance %, reserve violations and **recovery time**: the time from the kill
+until the interrupted interval's result is recorded. In the Temporal UI, open that
+interval's workflow and look for a `dispatch_shard` activity whose started event shows
+`attempt: 2` and `identity: worker-b` (or `worker-a`).
+
+> **Local demos only.** The `chaos` service mounts `/var/run/docker.sock` so that it can
+> kill and restart containers. That gives it root-equivalent control of the host's Docker
+> daemon. Never run it anywhere except your own machine.
+
+### Scripted scenarios
+
+```
+make chaos SCENARIO=worker-kill   # replays a scripted scenario, prints its Scenario Report
+make test-e2e                     # the same scenario as a compose-mode test with SLO asserts
+```
+
+Both need the stack running (`make up`). `make chaos` exits non-zero if any SLO is missed.
+Scenarios live in `scenarios/<name>.yaml`. The format is "at interval k, apply X for n
+intervals" over a window of one replay day:
+
+```yaml
+name: worker-kill                 # used by make chaos SCENARIO=<name>
+description: Kill a worker mid-dispatch at the spike peak.
+settlement_point: LZ_HOUSTON      # optional; default SETTLEMENT_POINT
+day: 2026-01-28                   # optional; a cached day. Omit it to use `fixture`
+fixture: data/fixtures/rtm_spp_lz_houston_2026-01-28.csv   # optional; default FIXTURE_PATH
+window:
+  from_interval: 24               # index into the day's 15-min Market Intervals (0 = midnight CT)
+  intervals: 24                   # optional; default to the end of the day
+steps:
+  - at_interval: 4                # index into the window
+    apply: worker-kill            # the Chaos Scenario; tickets 06-08 add more
+    for_intervals: 2              # cleared (worker restarted) after n intervals of wall time
+    target: worker-a              # optional; default the worker running the dispatch
+```
+
+The runner starts the Replay Run and applies each step when the run reaches that
+interval. When the run ends, it prints the Scenario Report, the chaos events, the retried
+dispatch attempts from Temporal history, and the SLO table. The fleet seed and the
+window are fixed, so the same script replays the same run.
+
+If another stack already holds port 5432 or 3000, set `POSTGRES_HOST_PORT` and/or
+`WEB_HOST_PORT` for `docker compose`, and point `CORS_ORIGINS` at the new web port.
+
 ## Development
 
 - `make check` — ruff (format + lint), pytest, and the web app's lint/type-check/build.
-- `make test` — just the Python test suite.
+- `make test` — the Python test suite without the compose-mode `e2e` tests.
+- `make test-e2e` — compose-mode tests (needs `make up`).
 - `make types` — regenerates the dashboard's TypeScript types from the API's OpenAPI
   schema (`web/src/types/api.ts`). Run this after any API model change; CI fails if it
   produces a diff that wasn't committed.

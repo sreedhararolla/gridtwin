@@ -1,7 +1,5 @@
-"""Postgres connection, the service-heartbeat table and the dispatch ledger schema.
-
-Chaos events (worker-kill, partition, duplicate-delivery scenarios) land with ticket 05+.
-"""
+"""Postgres connection, the service-heartbeat table, the dispatch ledger schema and the
+chaos event log."""
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -86,6 +84,19 @@ CREATE TABLE IF NOT EXISTS device_telemetry (
     sent_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (run_id, device_id)
 );
+
+-- The chaos event log: every Chaos Scenario applied or cleared, with time and target.
+CREATE TABLE IF NOT EXISTS chaos_events (
+    id BIGSERIAL PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    at TIMESTAMPTZ NOT NULL,
+    scenario TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    interval_start TIMESTAMPTZ,
+    detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS chaos_events_run_id_idx ON chaos_events (run_id);
 """
 
 

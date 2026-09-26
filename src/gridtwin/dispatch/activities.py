@@ -21,6 +21,13 @@ from gridtwin.telemetry.repo import TelemetryRepo
 from gridtwin.transport.base import Transport
 
 INTERVAL_MINUTES = 15
+HEARTBEAT_EVERY_SECONDS = 0.5
+
+
+async def _heartbeat_until_cancelled(detail: str) -> None:
+    while True:
+        activity.heartbeat(detail)
+        await asyncio.sleep(HEARTBEAT_EVERY_SECONDS)
 
 
 class DispatchActivities:
@@ -129,13 +136,16 @@ class DispatchActivities:
             )
             for device_id, setpoint_mw in setpoints.items()
         ]
-        await asyncio.to_thread(self._repo.upsert_commands, commands)
-
-        activity.heartbeat("sending batch")
-        acks = await self._transport.send_batch(shard_id, commands, timeout_seconds)
-
-        activity.heartbeat("recording acks")
-        await asyncio.to_thread(self._repo.record_acks, acks)
+        # Heartbeat throughout, not only between steps: a batch that waits on acks must not
+        # look like a dead worker, and a dead worker must be noticed within the heartbeat
+        # timeout so the retry lands on the surviving worker.
+        heartbeats = asyncio.create_task(_heartbeat_until_cancelled(shard_id))
+        try:
+            await asyncio.to_thread(self._repo.upsert_commands, commands)
+            acks = await self._transport.send_batch(shard_id, commands, timeout_seconds)
+            await asyncio.to_thread(self._repo.record_acks, acks)
+        finally:
+            heartbeats.cancel()
         return ShardDispatchResult(
             shard_id=shard_id,
             dispatched_count=len(commands),

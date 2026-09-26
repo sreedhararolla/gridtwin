@@ -1,0 +1,14 @@
+# Kill the worker running a Shard dispatch at the Jan 28, 2026 LZ_HOUSTON peak
+# ($1,284.81/MWh, 7:00 AM CT), then restart it two intervals later.
+# Run: make chaos SCENARIO=worker-kill (about 6 minutes at 60x)
+name: worker-kill
+description: Kill a worker mid-dispatch at the spike peak; no interval may be missed.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2026-01-28.csv
+window:
+  from_interval: 24 # 6:00 AM CT, the run-up to the peak
+  intervals: 24 # through noon CT; one faulted interval fits the >= 95 % SLO (ADR-010)
+steps:
+  - at_interval: 4 # the 7:00 AM CT peak
+    apply: worker-kill
+    for_intervals: 2

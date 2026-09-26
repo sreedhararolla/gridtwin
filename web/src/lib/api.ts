@@ -7,6 +7,35 @@ export type LatestRun = components["schemas"]["LatestRun"];
 export type CachedDay = components["schemas"]["CachedDay"];
 export type PricePoint = components["schemas"]["PricePoint"];
 export type StartedRun = components["schemas"]["StartedRun"];
+export type ChaosEvent = components["schemas"]["ChaosEvent"];
+export type SloReport = components["schemas"]["SloReport"];
+
+export async function applyChaos(runId: string, scenario: "worker-kill"): Promise<ChaosEvent> {
+  const res = await fetch(`${API_BASE_URL}/chaos/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario, run_id: runId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail ?? `chaos apply failed: ${res.status}`);
+  }
+  return (await res.json()) as ChaosEvent;
+}
+
+export async function fetchChaosEvents(runId: string): Promise<ChaosEvent[]> {
+  const res = await fetch(`${API_BASE_URL}/runs/${encodeURIComponent(runId)}/chaos-events`, {
+    cache: "no-store",
+  });
+  return (await res.json()) as ChaosEvent[];
+}
+
+export async function fetchSlo(runId: string): Promise<SloReport> {
+  const res = await fetch(`${API_BASE_URL}/runs/${encodeURIComponent(runId)}/slo`, {
+    cache: "no-store",
+  });
+  return (await res.json()) as SloReport;
+}
 
 export async function startRun(day: string): Promise<StartedRun> {
   const res = await fetch(`${API_BASE_URL}/runs`, {

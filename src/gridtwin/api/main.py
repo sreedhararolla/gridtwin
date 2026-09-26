@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from gridtwin.api import marketdata, runs
+from gridtwin.api import chaos, marketdata, runs
 from gridtwin.api.health import gather_health
 from gridtwin.api.models import HealthResponse
 from gridtwin.settings import settings
@@ -30,3 +30,4 @@ async def health(response: Response) -> HealthResponse:
 
 app.include_router(runs.router)
 app.include_router(marketdata.router)
+app.include_router(chaos.router)

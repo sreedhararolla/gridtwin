@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     naive_charge_threshold_usd: float = 20.0
 
     dispatch_timeout_seconds: float = 5.0
+    tolerance_pct: float = 0.05
+
+    # Chaos controller (ticket 05). The Docker socket mount is for local demos only.
+    chaos_controller_url: str = "http://localhost:8001"
+    api_url: str = "http://localhost:8000"  # where `make chaos` reaches the API
+    scenarios_dir: str = "scenarios"
+    docker_socket_path: str = "/var/run/docker.sock"
+    compose_project: str = "gridtwin"
+    chaos_restart_delay_seconds: float = 20.0
+    chaos_dispatch_wait_seconds: float = 30.0
+    chaos_recovery_slo_seconds: float = 15.0
 
     # Ticket 03 appends the market data ingest settings below this line.
     marketdata_cache_dir: str = "data/cache"

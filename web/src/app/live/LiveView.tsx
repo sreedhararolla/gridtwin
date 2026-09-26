@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ChaosPanel } from "@/components/ChaosPanel";
 import { DependencyPanel } from "@/components/DependencyPanel";
 import { FleetReadouts } from "@/components/FleetReadouts";
 import { LiveChart } from "@/components/LiveChart";
 import { ReplayPicker } from "@/components/ReplayPicker";
 import { SocBandChart } from "@/components/SocBandChart";
 import { fetchLatestRun } from "@/lib/api";
+import { useChaos } from "@/lib/useChaos";
 import { useIntervalResults } from "@/lib/useIntervalResults";
 
 const LATEST_RUN_POLL_MS = 3000;
@@ -41,6 +43,7 @@ export function LiveView() {
   }, [runParam]);
 
   const { results, connected } = useIntervalResults(runId);
+  const { events, slo, refresh } = useChaos(runId);
   const latest = results.at(-1);
 
   return (
@@ -68,7 +71,9 @@ export function LiveView() {
         {runId ? (
           <>
             <FleetReadouts results={results} />
-            <LiveChart results={results} />
+            <h3 className="text-sm font-medium text-slate-400">Chaos</h3>
+            <ChaosPanel runId={runId} events={events} slo={slo} onApplied={refresh} />
+            <LiveChart results={results} chaosEvents={events} />
             <h3 className="text-sm font-medium text-slate-400">Fleet SoC (p10 / median / p90)</h3>
             <SocBandChart results={results} />
           </>

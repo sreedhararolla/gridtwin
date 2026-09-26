@@ -22,8 +22,21 @@ from gridtwin.ledger.models import IntervalResult
 from gridtwin.planner.models import FleetPlan, FleetState
 from gridtwin.replay.models import MarketSnapshot
 
-ACTIVITY_TIMEOUT = timedelta(seconds=10)
-RETRY_POLICY = RetryPolicy(maximum_attempts=3)
+# Worker-kill resilience (ticket 05): a short activity lost with its worker is retried on
+# the surviving worker after ACTIVITY_TIMEOUT; a lost `dispatch_shard` after
+# DISPATCH_HEARTBEAT_TIMEOUT. Both stay well inside a 15 s interval budget at 60x.
+ACTIVITY_TIMEOUT = timedelta(seconds=5)
+SEED_TIMEOUT = timedelta(seconds=30)
+DISPATCH_TIMEOUT = timedelta(seconds=10)
+DISPATCH_HEARTBEAT_TIMEOUT = timedelta(seconds=2)
+# A workflow task handed to a worker that then dies is retried after this (Temporal's
+# default is 10 s, which alone would blow the Recovery Time SLO).
+WORKFLOW_TASK_TIMEOUT = timedelta(seconds=2)
+RETRY_POLICY = RetryPolicy(
+    initial_interval=timedelta(milliseconds=200),
+    backoff_coefficient=2.0,
+    maximum_attempts=3,
+)
 INTERVAL_SECONDS = 900.0
 CONTINUE_AS_NEW_EVERY = 48
 
@@ -131,8 +144,8 @@ class MarketIntervalWorkflow:
                                 1,
                                 input.dispatch_timeout_seconds,
                             ],
-                            start_to_close_timeout=ACTIVITY_TIMEOUT,
-                            heartbeat_timeout=timedelta(seconds=5),
+                            start_to_close_timeout=DISPATCH_TIMEOUT,
+                            heartbeat_timeout=DISPATCH_HEARTBEAT_TIMEOUT,
                             retry_policy=RETRY_POLICY,
                             result_type=ShardDispatchResult,
                             activity_id=f"dispatch:{shard_id}",
@@ -180,7 +193,7 @@ class ReplayRunWorkflow:
             await workflow.execute_activity(
                 "seed_fleet",
                 args=[input.run_id, input.fleet, input.dispatch_timeout_seconds],
-                start_to_close_timeout=ACTIVITY_TIMEOUT,
+                start_to_close_timeout=SEED_TIMEOUT,
                 retry_policy=RETRY_POLICY,
             )
 
@@ -218,6 +231,7 @@ class ReplayRunWorkflow:
                 # A second start of the same interval id is rejected outright, not just
                 # while the first is running: idempotent scheduling (CONTEXT.md).
                 id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+                task_timeout=WORKFLOW_TASK_TIMEOUT,
             )
             processed += 1
             if remaining:

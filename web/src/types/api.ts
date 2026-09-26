@@ -126,10 +126,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chaos/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Chaos */
+        post: operations["apply_chaos_chaos_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chaos/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Chaos */
+        post: operations["clear_chaos_chaos_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/chaos-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chaos Events */
+        get: operations["get_chaos_events_runs__run_id__chaos_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/slo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slo */
+        get: operations["get_slo_runs__run_id__slo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ApplyChaosRequest */
+        ApplyChaosRequest: {
+            /**
+             * Scenario
+             * @constant
+             */
+            scenario: "worker-kill";
+            /** Run Id */
+            run_id: string;
+            /** Target */
+            target?: string | null;
+            /** Duration S */
+            duration_s?: number | null;
+        };
         /** CachedDay */
         CachedDay: {
             /**
@@ -139,6 +221,47 @@ export interface components {
             day: string;
             /** Max Rt Price Usd Per Mwh */
             max_rt_price_usd_per_mwh: number;
+        };
+        /**
+         * ChaosEvent
+         * @description One row of the chaos event log: when, which scenario, against what.
+         */
+        ChaosEvent: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Scenario */
+            scenario: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "apply" | "clear";
+            /** Target */
+            target: string;
+            /** Interval Start */
+            interval_start?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
+        /** ClearChaosRequest */
+        ClearChaosRequest: {
+            /**
+             * Scenario
+             * @constant
+             */
+            scenario: "worker-kill";
+            /** Run Id */
+            run_id: string;
+            /** Target */
+            target: string;
         };
         /** DependencyStatus */
         DependencyStatus: {
@@ -243,6 +366,25 @@ export interface components {
             /** Dam Price Usd Per Mwh */
             dam_price_usd_per_mwh: number | null;
         };
+        /** RecoveryTime */
+        RecoveryTime: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Scenario */
+            scenario: string;
+            /** Target */
+            target: string;
+            /**
+             * Interval Start
+             * Format: date-time
+             */
+            interval_start: string;
+            /** Recovery S */
+            recovery_s: number | null;
+        };
         /** ServiceCount */
         ServiceCount: {
             /** Name */
@@ -251,6 +393,26 @@ export interface components {
             ready: number;
             /** Total */
             total: number;
+        };
+        /** SloReport */
+        SloReport: {
+            /** Run Id */
+            run_id: string;
+            /** Rows */
+            rows: components["schemas"]["SloRow"][];
+            /** Recoveries */
+            recoveries: components["schemas"]["RecoveryTime"][];
+        };
+        /** SloRow */
+        SloRow: {
+            /** Name */
+            name: string;
+            /** Target */
+            target: string;
+            /** Actual */
+            actual: string;
+            /** Ok */
+            ok: boolean;
         };
         /** StartRunRequest */
         StartRunRequest: {
@@ -471,6 +633,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricePoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_chaos_chaos_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyChaosRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChaosEvent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_chaos_chaos_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearChaosRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChaosEvent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chaos_events_runs__run_id__chaos_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChaosEvent"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_slo_runs__run_id__slo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SloReport"];
                 };
             };
             /** @description Validation Error */

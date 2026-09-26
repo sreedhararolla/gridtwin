@@ -10,6 +10,7 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
+from gridtwin.chaos.slo import within_tolerance_pct
 from gridtwin.dispatch.activities import DispatchActivities
 from gridtwin.dispatch.publish import NullPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunInput, ReplayRunWorkflow
@@ -36,6 +37,10 @@ class ScenarioReport(BaseModel):
     median_dispatch_ms: float = 0.0
     max_shards_per_interval: int = 0
     min_online_devices: int = 0
+    # Chaos runs (compose mode, `make chaos`): faults injected and the evidence they left.
+    missed_intervals: int = 0
+    chaos_events: int = 0
+    retried_dispatches: int = 0
 
 
 class ScenarioResult(BaseModel):
@@ -106,20 +111,13 @@ def build_report(results: list[IntervalResult], tolerance_pct: float) -> Scenari
             p99_dispatch_ms=0.0,
         )
 
-    within_tolerance = 0
-    for r in results:
-        gap = abs(r.achievable_mw - r.delivered_mw)
-        tolerance = tolerance_pct * max(abs(r.achievable_mw), 1e-9)
-        if gap <= tolerance:
-            within_tolerance += 1
-
     latencies = sorted(r.latency_ms for r in results)
     p99_index = max(int(len(latencies) * 0.99) - 1, 0)
     value_usd = sum(r.delivered_mw * INTERVAL_HOURS * r.price_usd_per_mwh for r in results)
 
     return ScenarioReport(
         intervals=len(results),
-        within_tolerance_pct=100.0 * within_tolerance / len(results),
+        within_tolerance_pct=within_tolerance_pct(results, tolerance_pct),
         reserve_violations=sum(r.reserve_violations for r in results),
         value_usd=value_usd,
         p99_dispatch_ms=latencies[p99_index],

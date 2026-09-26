@@ -32,6 +32,9 @@ Use these nouns in code, commits, UI labels and the video. If a new concept appe
 | **Stale Device** | A Device that has missed N Heartbeats; excluded from Fleet State. |
 | **Degradation Ladder** | L0 Optimized → L1 Cached Plan → L2 Safe Rule → L3 Hold. |
 | **Chaos Scenario** | An injected fault: worker kill, partition, telemetry delay, duplicates, feed outage/outlier, scale burst. |
+| **Chaos Event** | One apply or clear of a Chaos Scenario: time, scenario, target and the interval it hit. |
+| **Chaos Script** | `scenarios/<name>.yaml`: at interval k, apply X for n intervals, over a replay window. |
+| **Recovery Time** | From a fault until the interval it interrupted records its Interval Result. |
 | **Duplicate Delivery** | The same Command arriving more than once (allowed). |
 | **Duplicate Effect** | A Device acting on the same key twice (must be 0). |
 | **Interval Result** | Per-interval record: target, achievable, delivered, level, counts, latency. |

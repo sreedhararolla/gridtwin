@@ -1,4 +1,6 @@
-.PHONY: setup up down logs check test test-e2e types demo data
+.PHONY: setup up down logs check test test-e2e types demo data chaos
+
+SCENARIO ?= worker-kill
 
 setup:
 	bash scripts/bootstrap.sh
@@ -15,14 +17,15 @@ logs:
 check:
 	uv run ruff format --check .
 	uv run ruff check .
-	uv run pytest -q
+	uv run pytest -q -m "not e2e"
 	cd web && npm run lint && npm run typecheck && npm run build
 
 test:
-	uv run pytest -q
+	uv run pytest -q -m "not e2e"
 
+# Compose mode: needs `make up` first. Worker-kill and other container-level chaos.
 test-e2e:
-	uv run pytest -q -m e2e
+	uv run pytest -q -s -m e2e
 
 types:
 	uv run python -m gridtwin.api.export_openapi > openapi.json
@@ -37,6 +40,11 @@ demo:
 	docker compose up -d --build
 	uv run python scripts/wait_for_health.py
 	uv run python -m gridtwin.replay.cli $(if $(DAY),--day $(DAY),)
+
+# Scripted Chaos Scenario against the running stack: make chaos SCENARIO=worker-kill
+chaos:
+	uv run python scripts/wait_for_health.py
+	uv run python -m gridtwin.chaos.cli $(SCENARIO)
 
 data:
 	uv run python -m gridtwin.marketdata.cli ingest

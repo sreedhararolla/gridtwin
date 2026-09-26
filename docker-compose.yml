@@ -3,7 +3,7 @@ x-app-env: &app-env
   NATS_URL: nats://nats:4222
   TEMPORAL_ADDRESS: temporal:7233
   TEMPORAL_NAMESPACE: default
-  CORS_ORIGINS: http://localhost:3000
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
   WORKER_REPLICAS: "2"
   SIMULATOR_REPLICAS: "2"
   HEARTBEAT_INTERVAL_SECONDS: "1"
@@ -28,6 +28,7 @@ x-app-env: &app-env
   NAIVE_DISCHARGE_THRESHOLD_USD: "90.0"
   NAIVE_CHARGE_THRESHOLD_USD: "20.0"
   DISPATCH_TIMEOUT_SECONDS: "5.0"
+  CHAOS_CONTROLLER_URL: http://chaos:8001
 
 services:
   postgres:
@@ -36,7 +37,7 @@ services:
       POSTGRES_USER: gridtwin
       POSTGRES_PASSWORD: gridtwin
       POSTGRES_DB: gridtwin
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_HOST_PORT:-5432}:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gridtwin -d gridtwin"]
@@ -142,6 +143,24 @@ services:
       nats:
         condition: service_healthy
 
+  # Chaos controller. It mounts the Docker socket so it can kill and restart workers:
+  # LOCAL DEMOS ONLY (README). The API forwards the dashboard's chaos buttons to it.
+  chaos:
+    build: .
+    command: ["uvicorn", "gridtwin.chaos.controller:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      <<: *app-env
+      INSTANCE_ID: chaos
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-gridtwin}
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    ports: ["8001:8001"]
+    restart: on-failure  # Temporal may still be starting on first boot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+
   telemetry:
     build: .
     command: ["python", "-m", "gridtwin.telemetry.main"]
@@ -160,7 +179,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     depends_on: [api]
-    ports: ["3000:3000"]
+    ports: ["${WEB_HOST_PORT:-3000}:3000"]
 
 volumes:
   pgdata:
