@@ -1,7 +1,7 @@
 """Postgres-backed LedgerRepo: idempotent upsert by Idempotency Key, plus results.
 
-Every write is one connection and one `executemany` per batch, so a 100-device shard
-batch costs one round trip, not 100."""
+Every Shard batch write is one connection and one statement over arrays (`unnest`), so a
+batch costs one round trip and one commit, not one per row."""
 
 from gridtwin.fleet.models import Ack, Command, DeviceState
 from gridtwin.ledger.db import get_conn
@@ -25,68 +25,72 @@ RESULT_FIELDS = [c.strip() for c in RESULT_COLUMNS.split(",")]
 
 class PostgresLedgerRepo:
     def seed_devices(self, run_id: str, devices: list[DeviceState]) -> None:
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.executemany(
+        with get_conn() as conn:
+            conn.execute(
                 """
                 INSERT INTO devices
                     (run_id, device_id, soc_pct, energy_kwh, max_power_kw,
                      round_trip_efficiency, reserve_floor_pct, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+                SELECT %s, d, soc, e, p, rte, floor, now()
+                FROM unnest(%s::text[], %s::float8[], %s::float8[], %s::float8[],
+                            %s::float8[], %s::float8[]) AS x(d, soc, e, p, rte, floor)
                 ON CONFLICT (run_id, device_id) DO NOTHING
                 """,
-                [
-                    (
-                        run_id,
-                        d.device_id,
-                        d.soc_pct,
-                        d.energy_kwh,
-                        d.max_power_kw,
-                        d.round_trip_efficiency,
-                        d.reserve_floor_pct,
-                    )
-                    for d in devices
-                ],
+                (
+                    run_id,
+                    [d.device_id for d in devices],
+                    [d.soc_pct for d in devices],
+                    [d.energy_kwh for d in devices],
+                    [d.max_power_kw for d in devices],
+                    [d.round_trip_efficiency for d in devices],
+                    [d.reserve_floor_pct for d in devices],
+                ),
             )
 
     def upsert_commands(self, commands: list[Command]) -> None:
         if not commands:
             return
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.executemany(
+        # One statement over arrays: executemany costs a round trip per row (ticket 12).
+        with get_conn() as conn:
+            conn.execute(
                 """
                 INSERT INTO commands
                     (idempotency_key, run_id, interval_start, device_id, seq, setpoint_mw,
                      issued_at)
-                VALUES (%s, %s, %s, %s, %s, %s, now())
+                SELECT k, r, i, d, s, mw, now()
+                FROM unnest(%s::text[], %s::text[], %s::timestamptz[], %s::text[],
+                            %s::int[], %s::float8[]) AS c(k, r, i, d, s, mw)
                 ON CONFLICT (idempotency_key) DO NOTHING
                 """,
-                [
-                    (
-                        c.idempotency_key,
-                        c.run_id,
-                        c.interval_start,
-                        c.device_id,
-                        c.seq,
-                        c.setpoint_mw,
-                    )
-                    for c in commands
-                ],
+                (
+                    [c.idempotency_key for c in commands],
+                    [c.run_id for c in commands],
+                    [c.interval_start for c in commands],
+                    [c.device_id for c in commands],
+                    [c.seq for c in commands],
+                    [c.setpoint_mw for c in commands],
+                ),
             )
 
     def record_acks(self, acks: list[Ack]) -> None:
         if not acks:
             return
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.executemany(
+        with get_conn() as conn:
+            conn.execute(
                 """
                 UPDATE commands
-                SET applied = %s, delivered_mw = %s, status = %s, acked_at = now()
-                WHERE idempotency_key = %s
+                SET applied = a.applied, delivered_mw = a.mw, status = a.status,
+                    acked_at = now()
+                FROM unnest(%s::text[], %s::bool[], %s::float8[], %s::text[])
+                    AS a(k, applied, mw, status)
+                WHERE idempotency_key = a.k
                 """,
-                [
-                    (a.applied, a.delivered_mw, command_status(a.outcome), a.idempotency_key)
-                    for a in acks
-                ],
+                (
+                    [a.idempotency_key for a in acks],
+                    [a.applied for a in acks],
+                    [a.delivered_mw for a in acks],
+                    [command_status(a.outcome) for a in acks],
+                ),
             )
 
     def ledger_summary(self, run_id: str) -> list[LedgerIntervalSummary]:

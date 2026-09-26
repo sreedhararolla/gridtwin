@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     bench_memory_sample_seconds: float = 15.0
     bench_memory_warmup_seconds: float = 180.0
     bench_memory_max_growth_pct: float = 10.0
-    bench_output: str = "BENCHMARKS.md"
+    bench_output: str = "docs/BENCHMARKS.md"
 
     # Ticket 03 appends the market data ingest settings below this line.
     marketdata_cache_dir: str = "data/cache"

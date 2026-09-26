@@ -323,6 +323,9 @@ async def _connect_when_up() -> Client:
 async def main() -> None:
     init_schema()
     client = await _connect_when_up()
+    # An interrupted bench leaves runs on its own Temporal; new workers must not inherit them.
+    async for wf in client.list_workflows("ExecutionStatus = 'Running'"):
+        await client.get_workflow_handle(wf.id, run_id=wf.run_id).terminate("stale bench run")
     sizes = settings.bench_size_list
     log.info("bench %s devices at %gx, queue %s", sizes, settings.replay_speed, settings.task_queue)
 
