@@ -9,7 +9,7 @@
 | 03 | ERCOT + weather data cache | P0 | 01 | done | #4 | Sat 08:06 |
 | 04 | Fleet at scale + any-day replay | P0 | 02, 03 | done | #5 | Sat 04:21 |
 | 05 | Chaos panel + worker-kill resilience | P0 | 04 | done | #6 | Sat 10:17 |
-| 06 | Exactly-once effects under retries and duplicates | P0 | 05 | todo | #7 | |
+| 06 | Exactly-once effects under retries and duplicates | P0 | 05 | done | #7 | Sat 10:58 |
 | 07 | Device dropout, stale telemetry, reallocation | P0 | 05 | todo | #8 | |
 | 08 | Feed failure + degradation ladder | P1 | 05 | todo | #9 | |
 | 09 | LP planner + strategy backtest | P0 | 04 | todo | #10 | |
