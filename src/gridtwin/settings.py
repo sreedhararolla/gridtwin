@@ -22,6 +22,23 @@ class Settings(BaseSettings):
     service_name: str = ""
     instance_id: str = ""
 
+    task_queue: str = "gridtwin-dispatch"
+    settlement_point: str = "LZ_HOUSTON"
+    fixture_path: str = "data/fixtures/rtm_spp_lz_houston_2025-12-10.csv"
+    replay_speed: float = 60.0
+
+    device_count: int = 10
+    device_energy_kwh: float = 39.2
+    device_max_power_kw: float = 10.0
+    device_round_trip_efficiency: float = 0.9
+    reserve_floor_pct: float = 0.20
+    initial_soc_pct: float = 0.50
+
+    naive_discharge_threshold_usd: float = 90.0
+    naive_charge_threshold_usd: float = 20.0
+
+    dispatch_timeout_seconds: float = 5.0
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
