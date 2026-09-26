@@ -15,11 +15,16 @@
 | 09 | LP planner + strategy backtest | P0 | 04 | done | #10 | Sat 08:32 |
 | 10 | Scarcity-risk model | P1 | 09 | done | #11 | Sat 15:52 |
 | 11 | Insights: what most people miss | P0 | 03 | done | #12 | Sat 16:32 |
-| 12 | Scale + benchmarks | P2 | 06, 07 | todo | #13 | |
-| 13 | Demo scenario, README, submission | P0 | 05, 06, 07, 09, 11 | todo | #14 | |
-| 14 | (Stretch) Storm mode | Stretch | 09 | todo | #15 | |
+| 12 | Scale + benchmarks *(optional, not in the MVP)* | P2 | 06, 07 | todo | #13 | |
+| 13 | Demo scenario, README, submission | P0 | 05, 06, 07, 09, 11 | done | #14 | Sat 12:13 |
+| 14 | (Stretch) Storm mode *(not in the MVP)* | Stretch | 09 | todo | #15 | |
 
 Status values: `todo` · `in-progress` · `done` · `cut`
+
+**Submission state.** Every P0 and P1 ticket (01–11, 13) is done, and the MVP is
+submittable as it stands. 12 (P2) and 14 (stretch) are optional extras that autopilot may
+still pick up before `AUTOPILOT_DEADLINE`. Whatever is still `todo` at submission is
+**not shipped**, and the README's Status section says so.
 
 ## Target schedule (CT)
 Autopilot runs tickets back-to-back in dependency order: 01 → 02 → 03 → 04 → 05 → 06/07/09/11 → 08/10 → 12 → 13. It stops starting new tickets at **Sun 08:30** (`AUTOPILOT_DEADLINE`).
