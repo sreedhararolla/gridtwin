@@ -1,7 +1,90 @@
 "use client";
 
 import { useState } from "react";
-import { applyChaos, type ChaosEvent, type ScenarioName, type SloReport } from "@/lib/api";
+import {
+  applyChaos,
+  type ApplyChaosOptions,
+  type ChaosEvent,
+  type IntervalResult,
+  type ScenarioName,
+  type SloReport,
+} from "@/lib/api";
+
+const PARTITION_PCT = 0.2;
+const TELEMETRY_DELAY_S = 10;
+const TELEMETRY_DELAY_PCT = 0.3;
+
+type FleetEvent = {
+  key: string;
+  interval: string;
+  text: string;
+  detail?: string;
+};
+
+function mw(value: number): string {
+  return `${Math.abs(value).toFixed(2)} MW`;
+}
+
+function count(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+// Stale detection, re-rating and Reallocation, read off the Interval Results.
+function fleetEvents(results: IntervalResult[]): FleetEvent[] {
+  const out: FleetEvent[] = [];
+  let previousStale = 0;
+  for (const r of results) {
+    const stale = r.stale_devices ?? 0;
+    const unresponsive = r.unresponsive_devices ?? 0;
+    if (stale !== previousStale) {
+      out.push({
+        key: `${r.interval_start}-stale`,
+        interval: r.interval_start,
+        text:
+          stale > previousStale
+            ? `${count(stale - previousStale)} devices stale · excluded from Fleet State`
+            : `${count(previousStale - stale)} devices back online`,
+        detail: `${count(r.online_devices ?? 0)} online`,
+      });
+      previousStale = stale;
+    }
+    if (unresponsive > 0) {
+      out.push({
+        key: `${r.interval_start}-unresponsive`,
+        interval: r.interval_start,
+        text: `${count(unresponsive)} devices sent no ack · achievable re-rated ${mw(r.planned_achievable_mw ?? 0)} → ${mw(r.achievable_mw)}`,
+      });
+    }
+    if ((r.reallocated_mw ?? 0) > 0) {
+      const rounds = r.reallocation_rounds ?? 0;
+      out.push({
+        key: `${r.interval_start}-realloc`,
+        interval: r.interval_start,
+        text: `reallocated ${mw(r.reallocated_mw ?? 0)} to ${count(r.reallocated_devices ?? 0)} devices`,
+        detail: `${rounds} round${rounds === 1 ? "" : "s"} · delivered ${mw(r.delivered_mw)}`,
+      });
+    }
+  }
+  return out;
+}
+
+function FleetTimeline({ results }: { results: IntervalResult[] }) {
+  const events = fleetEvents(results);
+  if (events.length === 0) {
+    return <p className="text-sm text-slate-500">No stale devices or reallocations yet.</p>;
+  }
+  return (
+    <ol className="flex flex-col gap-1 border-l-2 border-slate-600 pl-3 text-sm">
+      {[...events].reverse().map((e) => (
+        <li key={e.key} className="flex flex-wrap items-baseline gap-x-2">
+          <span className="tabular-nums text-slate-400">{formatInterval(e.interval)}</span>
+          <span className="text-slate-200">{e.text}</span>
+          {e.detail ? <span className="text-xs text-slate-500">{e.detail}</span> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", {
@@ -84,21 +167,23 @@ export function ChaosPanel({
   runId,
   events,
   slo,
+  results,
   onApplied,
 }: {
   runId: string;
   events: ChaosEvent[];
   slo: SloReport | null;
+  results: IntervalResult[];
   onApplied: () => void;
 }) {
   const [arming, setArming] = useState<ScenarioName | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function apply(scenario: ScenarioName) {
+  async function apply(scenario: ScenarioName, options: ApplyChaosOptions = {}) {
     setArming(scenario);
     setError(null);
     try {
-      await applyChaos(runId, scenario);
+      await applyChaos(runId, scenario, options);
       onApplied();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Chaos apply failed");
@@ -139,8 +224,43 @@ export function ChaosPanel({
             Simulators deliver every batch twice and replay old ones; devices dedupe by key.
           </span>
         </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => apply("partition", { pct: PARTITION_PCT })}
+            disabled={arming !== null}
+            className={buttonClass}
+          >
+            Partition {PARTITION_PCT * 100} %
+          </button>
+          <span className="text-xs text-slate-500">
+            {PARTITION_PCT * 100} % of devices drop their commands and heartbeats; the shortfall is
+            reallocated.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              apply("telemetry-delay", {
+                delay_s: TELEMETRY_DELAY_S,
+                pct: TELEMETRY_DELAY_PCT,
+              })
+            }
+            disabled={arming !== null}
+            className={buttonClass}
+          >
+            Telemetry delay {TELEMETRY_DELAY_S} s
+          </button>
+          <span className="text-xs text-slate-500">
+            Heartbeats of {TELEMETRY_DELAY_PCT * 100} % of devices arrive {TELEMETRY_DELAY_S} s
+            late; they go stale and the achievable target is de-rated.
+          </span>
+        </div>
         {error ? <span className="text-sm text-bad">{error}</span> : null}
         <EventTimeline events={events} slo={slo} />
+        <h4 className="text-xs uppercase tracking-wide text-slate-500">Fleet timeline</h4>
+        <FleetTimeline results={results} />
       </div>
       <SloTable slo={slo} />
     </div>

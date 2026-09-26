@@ -57,6 +57,17 @@ deliveries** counter climbs while **Duplicate effects** stays at 0. The **Comman
 panel shows any interval's Commands issued, acked, expired and failed; from a terminal,
 `make ledger RUN=<run_id>` prints the same summary (omit `RUN` for the latest run).
 
+Press **Partition 20 %** to take a seeded 20 % of Devices dark: their Commands and
+Heartbeats drop. If an interval commands them before they go stale, they send no Ack; the
+interval re-rates its Achievable Target without them and reallocates the Shortfall to
+reachable Devices as `seq+1` Commands. One telemetry period later they are stale: the
+**Online devices** readout drops (stale Devices greyed out) and the **Fleet timeline**
+reads, for example, "400 devices stale" and "reallocated 1.59 MW to 1,600 devices". Press
+**Telemetry delay 10 s** to make 30 % of Heartbeats arrive 10 s late: those Devices go
+stale, so the Achievable Target is de-rated and nothing is planned on SoC that may be out
+of date. `REALLOCATION_RESERVE_PCT` (10 %) of headroom is held back from the planner so a
+Shortfall has somewhere to go (ADR-012).
+
 > **Local demos only.** The `chaos` service mounts `/var/run/docker.sock` so that it can
 > kill and restart containers. That gives it root-equivalent control of the host's Docker
 > daemon. Never run it anywhere except your own machine.
@@ -66,10 +77,12 @@ panel shows any interval's Commands issued, acked, expired and failed; from a te
 ```
 make chaos SCENARIO=worker-kill   # replays a scripted scenario, prints its Scenario Report
 make chaos SCENARIO=duplicates    # duplicate + replayed batches: effects must stay 0
+make chaos SCENARIO=partition     # 20 % of devices dark: within tolerance of achievable
+make chaos SCENARIO=telemetry-delay  # late heartbeats: stale, de-rated, 0 violations
 make test-e2e                     # the same scenarios as compose-mode tests with SLO asserts
 ```
 
-Both need the stack running (`make up`). `make chaos` exits non-zero if any SLO is missed.
+All need the stack running (`make up`). `make chaos` exits non-zero if any SLO is missed.
 Scenarios live in `scenarios/<name>.yaml`. The format is "at interval k, apply X for n
 intervals" over a window of one replay day:
 
@@ -84,10 +97,17 @@ window:
   intervals: 24                   # optional; default to the end of the day
 steps:
   - at_interval: 4                # index into the window
-    apply: worker-kill            # the Chaos Scenario: worker-kill | duplicate-commands
+    apply: worker-kill            # worker-kill | duplicate-commands | partition | telemetry-delay
     for_intervals: 2              # cleared (worker restarted) after n intervals of wall time
     target: worker-a              # optional; default the worker running the dispatch
+    pct: 0.2                      # partition / telemetry-delay: share of Devices hit
+    delay_s: 10                   # telemetry-delay: how late Heartbeats arrive (wall s)
+    at_offset_s: 12               # compose: wait this long into the interval before applying
 ```
+
+`partition`, `telemetry-delay` and `duplicate-commands` scripts also run in-process, in
+the Scenario Runner (`tests/test_scenario_partition.py`), where a step lands just after
+the interval's telemetry is read: the worst case for a partition.
 
 The runner starts the Replay Run and applies each step when the run reaches that
 interval. When the run ends, it prints the Scenario Report, the chaos events, the retried

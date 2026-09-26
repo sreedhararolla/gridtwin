@@ -224,13 +224,17 @@ export interface components {
              * Scenario
              * @enum {string}
              */
-            scenario: "worker-kill" | "duplicate-commands";
+            scenario: "worker-kill" | "duplicate-commands" | "partition" | "telemetry-delay";
             /** Run Id */
             run_id: string;
             /** Target */
             target?: string | null;
             /** Duration S */
             duration_s?: number | null;
+            /** Pct */
+            pct?: number | null;
+            /** Delay S */
+            delay_s?: number | null;
         };
         /** CachedDay */
         CachedDay: {
@@ -277,7 +281,7 @@ export interface components {
              * Scenario
              * @enum {string}
              */
-            scenario: "worker-kill" | "duplicate-commands";
+            scenario: "worker-kill" | "duplicate-commands" | "partition" | "telemetry-delay";
             /** Run Id */
             run_id: string;
             /**
@@ -386,6 +390,36 @@ export interface components {
              * @default 0
              */
             retried_dispatches: number;
+            /**
+             * Planned Achievable Mw
+             * @default 0
+             */
+            planned_achievable_mw: number;
+            /**
+             * Stale Devices
+             * @default 0
+             */
+            stale_devices: number;
+            /**
+             * Unresponsive Devices
+             * @default 0
+             */
+            unresponsive_devices: number;
+            /**
+             * Reallocation Rounds
+             * @default 0
+             */
+            reallocation_rounds: number;
+            /**
+             * Reallocated Mw
+             * @default 0
+             */
+            reallocated_mw: number;
+            /**
+             * Reallocated Devices
+             * @default 0
+             */
+            reallocated_devices: number;
         };
         /** LatestRun */
         LatestRun: {

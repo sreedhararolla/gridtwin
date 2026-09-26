@@ -73,7 +73,13 @@ export function LiveView() {
           <>
             <FleetReadouts results={results} />
             <h3 className="text-sm font-medium text-slate-400">Chaos</h3>
-            <ChaosPanel runId={runId} events={events} slo={slo} onApplied={refresh} />
+            <ChaosPanel
+              runId={runId}
+              events={events}
+              slo={slo}
+              results={results}
+              onApplied={refresh}
+            />
             <h3 className="text-sm font-medium text-slate-400">Command Ledger</h3>
             <LedgerSummary runId={runId} results={results} />
             <LiveChart results={results} chaosEvents={events} />

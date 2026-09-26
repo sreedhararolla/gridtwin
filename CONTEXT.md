@@ -19,7 +19,9 @@ Use these nouns in code, commits, UI labels and the video. If a new concept appe
 | **Risk Curve** | Spike probability for each upcoming interval in the horizon. |
 | **Strategy** | Planning policy: `naive`, `lp`, `lp_risk`, `perfect_foresight`. |
 | **Fleet Plan** | MW target per interval over the planning horizon (+ discharge / − charge). |
-| **Achievable Target** | min(plan target, Fleet State headroom). SLOs are measured against this. |
+| **Achievable Target** | min(plan target, Fleet State headroom). SLOs are measured against this. Re-rated within the interval without Unresponsive Devices. |
+| **Unresponsive Device** | A Device in Fleet State that sent no Ack for its Command (e.g. partitioned). Treated as stale for the rest of the interval. |
+| **Reallocation Reserve** | Share of Fleet State headroom held back from the planner, so a Shortfall has Devices with Headroom to go to. |
 | **Setpoint** | The MW a single Device is asked to deliver this interval. |
 | **Command** | A Setpoint plus Idempotency Key plus expiry, sent in a Shard batch. |
 | **Idempotency Key** | `run_id:interval_start:device_id:seq`. `seq` increments only on reallocation. |

@@ -19,11 +19,20 @@ export async function fetchLedger(runId: string): Promise<LedgerIntervalSummary[
   return (await res.json()) as LedgerIntervalSummary[];
 }
 
-export async function applyChaos(runId: string, scenario: ScenarioName): Promise<ChaosEvent> {
+export type ApplyChaosOptions = Pick<
+  components["schemas"]["ApplyChaosRequest"],
+  "pct" | "delay_s" | "duration_s"
+>;
+
+export async function applyChaos(
+  runId: string,
+  scenario: ScenarioName,
+  options: ApplyChaosOptions = {},
+): Promise<ChaosEvent> {
   const res = await fetch(`${API_BASE_URL}/chaos/apply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scenario, run_id: runId }),
+    body: JSON.stringify({ scenario, run_id: runId, ...options }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { detail?: string };
@@ -75,7 +84,12 @@ export async function fetchCachedDays(settlementPoint: string): Promise<CachedDa
 }
 
 export async function fetchPrices(settlementPoint: string, day: string): Promise<PricePoint[]> {
-  const params = new URLSearchParams({ settlement_point: settlementPoint, day });
-  const res = await fetch(`${API_BASE_URL}/marketdata/prices?${params}`, { cache: "no-store" });
+  const params = new URLSearchParams({
+    settlement_point: settlementPoint,
+    day,
+  });
+  const res = await fetch(`${API_BASE_URL}/marketdata/prices?${params}`, {
+    cache: "no-store",
+  });
   return (await res.json()) as PricePoint[];
 }
