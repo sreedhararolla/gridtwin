@@ -31,6 +31,14 @@ itself. Days already cached from the daily fetch are kept as-is.
 cache holds DAM SPP for 2025-12-05 → 2026-09-25. The LP planner's price forecast reads
 it (`marketdata/forecast.py`, ADR-014).
 
+**Weather for the risk model.** Ticket 10 ingested `weather_temperature` for all four
+cities over 2025-12-05 → 2026-09-25 (`... ingest --datasets weather_temperature --start
+2025-12-05 --end 2026-09-25`). The scarcity-risk model reads `houston`
+(`RISK_WEATHER_CITY`). These are archive *observations*, so the model only uses the last
+observed hour at decision time, never the target hour's temperature (MODEL.md).
+Load/wind/solar forecasts and outages are still not cached, so the model runs without
+them (ticket 10's cut line); see MODEL.md.
+
 As of ticket 04 the cache holds real RT SPP for 2025-12-05 → 2026-09-25
 (`demo-days` #1 at `LZ_HOUSTON`: **2026-01-28**, max $1,284.81/MWh).
 

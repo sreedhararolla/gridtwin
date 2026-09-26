@@ -271,6 +271,7 @@ def train(settlement_point: str, seed: int, city: str) -> tuple[RiskReport, pd.D
     df = build_dataset(history)
     logger.info("dataset: %d rows, %d decisions", len(df), df["decision_utc"].nunique())
     folds, predictions = walk_forward(df, seed)
+    predictions["settlement_point"] = settlement_point
 
     wf = predictions[predictions["provenance"] == "walk-forward"]
     y = wf["spike"].to_numpy()

@@ -11,8 +11,8 @@ import duckdb
 import pandas as pd
 
 from gridtwin.risk.features import trading_day
-from gridtwin.risk.models import RiskCurve, RiskDay, RiskPoint, RiskReport
-from gridtwin.risk.paths import predictions_path, report_path
+from gridtwin.risk.models import RiskCurve, RiskDay, RiskPoint
+from gridtwin.risk.paths import predictions_path
 
 ONE_HOUR_LEAD = 4
 
@@ -71,24 +71,20 @@ class RiskStore:
 
 
 @lru_cache(maxsize=1)
-def _load(mtime: float) -> RiskStore | None:
-    path = predictions_path()
-    if not path.exists():
+def _load(path: str, _mtime: float) -> RiskStore | None:
+    df = duckdb.sql(f"SELECT * FROM read_parquet('{path}')").df()
+    if df.empty:
         return None
-    df = duckdb.sql(f"SELECT * FROM read_parquet('{path.as_posix()}')").df()
     df["decision_utc"] = pd.to_datetime(df["decision_utc"], utc=True)
-    settlement_point = ""
-    if report_path().exists():
-        settlement_point = RiskReport.model_validate_json(
-            report_path().read_text()
-        ).settlement_point
-    return RiskStore(df, settlement_point)
+    return RiskStore(df, str(df["settlement_point"].iloc[0]))
 
 
 def load_store() -> RiskStore | None:
     """The stored curves, reloaded when `make train` rewrites them."""
     path = predictions_path()
-    return _load(path.stat().st_mtime if path.exists() else 0.0)
+    if not path.exists():
+        return None
+    return _load(path.as_posix(), path.stat().st_mtime)
 
 
 def risk_curve(settlement_point: str, decision_time: datetime) -> RiskCurve | None:

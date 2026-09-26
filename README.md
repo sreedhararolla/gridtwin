@@ -41,8 +41,9 @@ interval's dispatch latency against its 15 s wall budget.
 ## Strategies and backtest
 
 ```
-make backtest                         # naive vs LP vs perfect foresight over the cached window
-make demo DAY=2026-01-28              # then pick "lp" in the Live page's Strategy selector
+make train                            # scarcity-risk model: walk-forward CV, Risk Curves (~10 min)
+make backtest                         # naive vs LP vs LP+risk vs perfect foresight
+make demo DAY=2026-01-28              # then pick "lp" or "lp_risk" in the Live page's selector
 uv run python -m gridtwin.replay.cli --day 2026-01-28 --strategy lp   # or from the CLI
 ```
 
@@ -59,6 +60,7 @@ The Insights page renders the backtest. Result at `LZ_HOUSTON`, 2025-12-05 → 2
 |---|---|---|---|
 | naive | $231,106 | $1,192 | 31.1% |
 | lp (DAM forecast) | $421,167 | $2,173 | 56.7% |
+| lp_risk (DAM + Risk Curve) | $334,263 | $1,724 | 45.0% |
 | perfect foresight | $742,738 | $3,832 | 100% |
 
 Perfect foresight is ≥ every other Strategy on every one of the 295 days. A 96-interval
@@ -70,8 +72,11 @@ solve takes 17.5 ms p50 and 30.8 ms max, against a 200 ms budget.
   to naive: $932 vs $1,250/MW-month. RT spikes are mostly not in yesterday's prices, and
   the LP spent energy on the wrong hours.
 - Even with DAM, the LP captures only 57% of perfect foresight. RT scarcity spikes are
-  largely not priced day-ahead. That gap is exactly what the scarcity-risk model (ticket
-  10) is for.
+  largely not priced day-ahead. The scarcity-risk model (ticket 10, `docs/MODEL.md`)
+  targets that gap. It ranks spike risk about 4x better than hour-of-day climatology
+  (PR-AUC 0.178 vs 0.046, walk-forward). Its probabilities, though, beat climatology by
+  only 5% (Brier skill). Trading on them through `lp_risk` currently *loses* money
+  versus `lp`, so the Live tab uses it as a risk monitor. MODEL.md explains why.
 - The backtest runs at fleet-aggregate level, without device noise or dropouts. Energy
   left at day end is valued at the day's median DAM price for every Strategy alike.
 - See ADR-014 in `docs/DECISIONS.md`.
