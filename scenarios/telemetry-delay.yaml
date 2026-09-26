@@ -1,0 +1,18 @@
+# Delay 30% of Devices' Heartbeats by 10 s (wall; 10 replay-minutes at 60x) through the
+# Jan 28, 2026 LZ_HOUSTON spike. Their telemetry is older than the stale threshold, so they
+# leave Fleet State and the Achievable Target is de-rated: nothing is planned on SoC that
+# may no longer be true, and no Device is pushed below its Reserve Floor.
+# Run: make chaos SCENARIO=telemetry-delay (about 3 minutes at 60x)
+name: telemetry-delay
+description: 30% of Heartbeats arrive 10 s late at the spike; no over-commit, 0 reserve violations.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2026-01-28.csv
+window:
+  from_interval: 24 # 6:00 AM CT, the run-up to the peak
+  intervals: 12 # through 9:00 AM CT
+steps:
+  - at_interval: 3 # 6:45 AM CT, into the 7:00 AM peak
+    apply: telemetry-delay
+    delay_s: 10
+    pct: 0.3
+    for_intervals: 6

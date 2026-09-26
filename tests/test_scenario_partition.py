@@ -19,8 +19,10 @@ def fleet_config() -> FleetConfig:
     )
 
 
-async def run_script(name: str, run_id: str) -> ScenarioResult:
+async def run_script(name: str, run_id: str, steps: bool = True) -> ScenarioResult:
     script = load_script(name)
+    if not steps:
+        script = script.model_copy(update={"steps": []})  # the same window, no chaos
     return await run_scenario(
         run_id=run_id,
         fleet=fleet_config(),
@@ -73,3 +75,29 @@ async def test_partition_20pct_stays_within_tolerance_of_achievable():
     # Cleared: they heartbeat again and rejoin the next interval.
     assert outcome.results[cleared_at + 1].online_devices == DEVICES
     assert report.duplicate_effects == 0
+
+
+async def test_telemetry_delay_derates_achievable_without_reserve_violations():
+    clean = await run_script("telemetry-delay", "delay-clean", steps=False)
+    outcome = await run_script("telemetry-delay", "delay-inproc")
+    report = outcome.report
+    print(report.model_dump_json(indent=2))
+    for r, c in zip(outcome.results, clean.results, strict=True):
+        print(
+            f"{r.interval_start:%H:%M} online={r.online_devices} stale={r.stale_devices} "
+            f"achievable={r.achievable_mw:.3f} (clean {c.achievable_mw:.3f}) "
+            f"delivered={r.delivered_mw:.3f}"
+        )
+
+    delayed = round(0.3 * DEVICES)
+    [(applied_at, _, _), (cleared_at, _, _)] = outcome.chaos_steps
+    first = applied_at + 1  # the first interval whose telemetry is late
+
+    assert report.reserve_violations == 0
+    assert report.within_tolerance_pct >= 95.0
+    assert report.unresponsive_devices == 0  # nothing was planned on the late Devices
+    assert outcome.results[first].stale_devices == delayed
+    assert outcome.results[first].online_devices == DEVICES - delayed
+    # De-rated: the same interval of a clean run planned on the whole fleet.
+    assert outcome.results[first].achievable_mw < 0.8 * clean.results[first].achievable_mw
+    assert outcome.results[cleared_at + 1].online_devices == DEVICES
