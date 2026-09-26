@@ -26,6 +26,8 @@ You are running in AUTOPILOT mode for GridTwin. No human is watching this sessio
 Follow .claude/commands/ship-ticket.md exactly with NO ticket argument (pick the frontier ticket),
 and apply its "Autopilot mode" section: never wait for a human; park the ticket instead.
 Work on exactly ONE ticket, write .autopilot/status.json as described there, then end the session.
+Run long commands (builds, tests, benchmarks, CI watch) in the FOREGROUND. Never end your turn to wait
+for background work: in this headless mode, ending the turn ends the session and the ticket is lost.
 P
 
 # Git Bash on Windows has no tz database, so TZ=America/Chicago silently yields UTC.
