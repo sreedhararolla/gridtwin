@@ -74,14 +74,34 @@ def ignored_ack(state: DeviceState, command: Command, outcome: AckOutcome) -> Ac
     )
 
 
+def remaining_headroom_mw(state: DeviceState, delivered_mw: float, discharge: bool) -> float:
+    """Headroom left this interval for a Device that was at `state` when the interval was
+    planned and has since delivered `delivered_mw` (signed). Conservative: whatever it
+    delivered comes off both its power and its energy headroom (a charge's efficiency loss
+    only makes the true figure larger), so a Reallocation never over-commits it."""
+    discharge_mw, charge_mw = headroom_mw(state)
+    if discharge:
+        return max(discharge_mw - max(delivered_mw, 0.0), 0.0)
+    return max(charge_mw - max(-delivered_mw, 0.0), 0.0)
+
+
 def apply_command(
-    state: DeviceState, command: Command, response_factor: float = 1.0, faulted: bool = False
+    state: DeviceState,
+    command: Command,
+    response_factor: float = 1.0,
+    faulted: bool = False,
+    interval_delivered_mw: float = 0.0,
 ) -> tuple[DeviceState, Ack]:
     """Apply one Setpoint for one Market Interval and return the Device's new state and Ack.
 
     `response_factor` is the device's response noise (delivered = setpoint x factor, still
     capped at headroom so noise can never push SoC below the floor); `faulted` means the
     device failed to act at all. Both are drawn by the (seeded) simulator, keeping this pure.
+
+    `interval_delivered_mw` is what this Device already delivered in the Command's interval
+    (a lower seq). A Reallocation's `seq+1` Setpoint is the Device's new *total* for the
+    interval, so it delivers only the increment, and the interval's total power stays within
+    `max_power_kw` (the energy cap already reflects the SoC the earlier seq used).
     """
     if faulted:
         return state, ignored_ack(state, command, "failed")
@@ -89,12 +109,17 @@ def apply_command(
     discharge_mw, charge_mw = headroom_mw(state)
     setpoint_mw = command.setpoint_mw * max(response_factor, 0.0)
     soc_kwh = state.energy_kwh * state.soc_pct
+    max_mw = state.max_power_kw / 1000.0
 
     if setpoint_mw >= 0:
-        delivered_mw = min(setpoint_mw, discharge_mw)
+        already_mw = max(interval_delivered_mw, 0.0)
+        power_left_mw = max(max_mw - already_mw, 0.0)
+        delivered_mw = max(min(setpoint_mw - already_mw, discharge_mw, power_left_mw), 0.0)
         soc_kwh -= delivered_mw * 1000.0 * INTERVAL_HOURS
     else:
-        charged_mw = min(-setpoint_mw, charge_mw)
+        already_mw = max(-interval_delivered_mw, 0.0)
+        power_left_mw = max(max_mw - already_mw, 0.0)
+        charged_mw = max(min(-setpoint_mw - already_mw, charge_mw, power_left_mw), 0.0)
         delivered_mw = -charged_mw
         soc_kwh += charged_mw * 1000.0 * INTERVAL_HOURS * state.round_trip_efficiency
 

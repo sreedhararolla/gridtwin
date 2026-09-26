@@ -1,0 +1,16 @@
+# Partition 20% of Devices through the Jan 28, 2026 LZ_HOUSTON spike: their Commands and
+# Heartbeats drop. They go stale and leave Fleet State; any interval that commanded them
+# before that re-rates its Achievable Target and reallocates the Shortfall.
+# Run: make chaos SCENARIO=partition (about 3 minutes at 60x)
+name: partition
+description: 20% of Devices go dark at the spike; delivered MW must track the Achievable Target.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2026-01-28.csv
+window:
+  from_interval: 24 # 6:00 AM CT, the run-up to the peak
+  intervals: 12 # through 9:00 AM CT
+steps:
+  - at_interval: 3 # 6:45 AM CT, into the 7:00 AM peak
+    apply: partition
+    pct: 0.2
+    for_intervals: 6

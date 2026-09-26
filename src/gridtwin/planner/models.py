@@ -10,6 +10,7 @@ class FleetState(BaseModel, frozen=True):
     charge_headroom_mw: float
     energy_above_floor_mwh: float = 0.0
     devices: list[DeviceState]  # non-stale Devices only
+    stale_devices: int = 0  # Devices known to telemetry but excluded: stale or unhealthy
 
 
 class FleetPlan(BaseModel, frozen=True):

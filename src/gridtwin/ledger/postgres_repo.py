@@ -16,7 +16,9 @@ RESULT_COLUMNS = (
     "run_id, interval_start, settlement_point, price_usd_per_mwh, target_mw, achievable_mw, "
     "delivered_mw, level, dispatched_count, acked_count, reserve_violations, latency_ms, "
     "budget_ms, online_devices, shard_count, soc_p10_pct, soc_p50_pct, soc_p90_pct, "
-    "duplicate_deliveries, duplicate_effects, retried_dispatches"
+    "duplicate_deliveries, duplicate_effects, retried_dispatches, planned_achievable_mw, "
+    "stale_devices, unresponsive_devices, reallocation_rounds, reallocated_mw, "
+    "reallocated_devices"
 )
 RESULT_FIELDS = [c.strip() for c in RESULT_COLUMNS.split(",")]
 
@@ -111,7 +113,12 @@ class PostgresLedgerRepo:
                     reserve_violations = EXCLUDED.reserve_violations,
                     duplicate_deliveries = EXCLUDED.duplicate_deliveries,
                     duplicate_effects = EXCLUDED.duplicate_effects,
-                    retried_dispatches = EXCLUDED.retried_dispatches
+                    retried_dispatches = EXCLUDED.retried_dispatches,
+                    achievable_mw = EXCLUDED.achievable_mw,
+                    unresponsive_devices = EXCLUDED.unresponsive_devices,
+                    reallocation_rounds = EXCLUDED.reallocation_rounds,
+                    reallocated_mw = EXCLUDED.reallocated_mw,
+                    reallocated_devices = EXCLUDED.reallocated_devices
                 """,
                 tuple(getattr(result, f) for f in RESULT_FIELDS),
             )

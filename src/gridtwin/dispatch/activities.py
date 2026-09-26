@@ -2,7 +2,8 @@
 never touch the ledger, the transport, telemetry or the market-data cache directly."""
 
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
 
 from temporalio import activity
 
@@ -40,11 +41,16 @@ class DispatchActivities:
         telemetry: TelemetryRepo,
         transport: Transport,
         publisher: ResultPublisher,
+        on_fleet_state: Callable[[datetime, datetime], None] | None = None,
     ) -> None:
+        """`on_fleet_state(interval_start, now)` runs just before Fleet State is read. The
+        in-process Scenario Runner uses it as its heartbeat loop and chaos schedule; in
+        compose the simulators heartbeat on their own and it is None."""
         self._repo = repo
         self._telemetry = telemetry
         self._transport = transport
         self._publisher = publisher
+        self._on_fleet_state = on_fleet_state
 
     def all(self) -> list:
         return [
@@ -99,9 +105,15 @@ class DispatchActivities:
         return validate_snapshot(interval_start, settlement_point, prices.get(interval_start))
 
     @activity.defn
-    async def get_fleet_state(self, run_id: str, stale_after_seconds: float) -> FleetState:
+    async def get_fleet_state(
+        self, run_id: str, stale_after_seconds: float, interval_start: datetime, now: datetime
+    ) -> FleetState:
+        """Fleet State at decision time `now` (the workflow's clock, so the in-process
+        runner's skipped time and compose's wall time both work)."""
+        if self._on_fleet_state is not None:
+            self._on_fleet_state(interval_start, now)
         heartbeats = await asyncio.to_thread(self._telemetry.latest, run_id)
-        return fleet_state_from_telemetry(heartbeats, datetime.now(UTC), stale_after_seconds)
+        return fleet_state_from_telemetry(heartbeats, now, stale_after_seconds)
 
     @activity.defn
     async def build_plan(
@@ -150,11 +162,14 @@ class DispatchActivities:
             heartbeats.cancel()
         acks = reply.acks
         attempt = activity.info().attempt
+        answered = {a.device_id for a in acks}
         return ShardDispatchResult(
             shard_id=shard_id,
             dispatched_count=len(commands),
             acked_count=sum(1 for a in acks if a.applied),
             delivered_mw=sum(a.delivered_mw for a in acks),
+            delivered={a.device_id: a.delivered_mw for a in acks if a.applied},
+            unresponsive=sorted(d for d in setpoints if d not in answered),
             reserve_violations=sum(1 for a in acks if a.floor_violation),
             duplicate_deliveries=reply.duplicate_deliveries,
             duplicate_effects=reply.duplicate_effects,

@@ -82,3 +82,12 @@ class IntervalResult(BaseModel, frozen=True):
     duplicate_deliveries: int = 0  # the same Command arriving at a Shard more than once
     duplicate_effects: int = 0  # a Device acting on the same key twice (must be 0)
     retried_dispatches: int = 0  # Shard dispatch activities that succeeded on a retry
+    # Staleness and Reallocation (ticket 07). `achievable_mw` is the Achievable Target the
+    # SLOs judge: re-rated without Devices that never answered their Command this interval.
+    # `planned_achievable_mw` is the figure from decision-time Fleet State.
+    planned_achievable_mw: float = 0.0
+    stale_devices: int = 0  # known to telemetry but excluded from Fleet State
+    unresponsive_devices: int = 0  # online at decision time, sent no Ack (e.g. partitioned)
+    reallocation_rounds: int = 0  # seq+1 rounds issued (bounded by config)
+    reallocated_mw: float = 0.0  # Shortfall re-issued to Devices with Headroom
+    reallocated_devices: int = 0  # distinct Devices sent a seq+1 Command

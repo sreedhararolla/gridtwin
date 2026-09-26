@@ -18,6 +18,14 @@ from temporalio.common import RetryPolicy, WorkflowIDReusePolicy
 from gridtwin.fleet.disaggregate import disaggregate
 from gridtwin.fleet.fleet import group_by_shard, soc_band
 from gridtwin.fleet.models import FleetConfig
+from gridtwin.fleet.reallocate import (
+    ReallocationConfig,
+    needs_reallocation,
+    reallocate,
+    reallocation_headroom,
+    rerate_achievable,
+    with_reserve,
+)
 from gridtwin.ledger.models import IntervalResult
 from gridtwin.planner.models import FleetPlan, FleetState
 from gridtwin.replay.models import MarketSnapshot
@@ -50,6 +58,9 @@ class ShardDispatchResult(BaseModel, frozen=True):
     duplicate_deliveries: int = 0
     duplicate_effects: int = 0
     attempt: int = 1  # the activity attempt that succeeded; > 1 = retried
+    # Reallocation inputs: MW per Device that acted, and Devices that sent no Ack at all.
+    delivered: dict[str, float] = {}
+    unresponsive: list[str] = []
 
 
 class MarketIntervalInput(BaseModel, frozen=True):
@@ -63,6 +74,7 @@ class MarketIntervalInput(BaseModel, frozen=True):
     dispatch_timeout_seconds: float
     stale_after_seconds: float
     budget_ms: float
+    reallocation: ReallocationConfig = ReallocationConfig()
 
 
 class ReplayRunInput(BaseModel):
@@ -78,6 +90,7 @@ class ReplayRunInput(BaseModel):
     stale_after_seconds: float
     interval_starts: list[datetime] | None = None  # None => load from the replay day
     seeded: bool = False
+    reallocation: ReallocationConfig = ReallocationConfig()
 
 
 @workflow.defn
@@ -102,7 +115,7 @@ class MarketIntervalWorkflow:
 
         fleet_state = await workflow.execute_activity(
             "get_fleet_state",
-            args=[input.run_id, input.stale_after_seconds],
+            args=[input.run_id, input.stale_after_seconds, input.interval_start, workflow.now()],
             start_to_close_timeout=ACTIVITY_TIMEOUT,
             retry_policy=RETRY_POLICY,
             result_type=FleetState,
@@ -111,16 +124,22 @@ class MarketIntervalWorkflow:
 
         target_mw = 0.0
         achievable_mw = 0.0
+        planned_achievable_mw = 0.0
         price = 0.0
         shard_results: list[ShardDispatchResult] = []
+        unresponsive: set[str] = set()
+        rounds = 0
+        reallocated_mw = 0.0
+        reallocated_devices: set[str] = set()
 
         if snapshot is not None:
             price = snapshot.rt_price_usd_per_mwh
             plan = await workflow.execute_activity(
                 "build_plan",
-                # The planner needs aggregate headroom only; keep 2,000 devices out of it.
+                # The planner needs aggregate headroom only (2,000 devices stay out of it),
+                # less the reserve that gives Reallocation somewhere to go.
                 args=[
-                    fleet_state.model_copy(update={"devices": []}),
+                    with_reserve(fleet_state, input.reallocation.reserve_pct),
                     snapshot,
                     input.discharge_threshold_usd,
                     input.charge_threshold_usd,
@@ -131,32 +150,45 @@ class MarketIntervalWorkflow:
             )
             target_mw = plan.target_mw
             setpoints = disaggregate(plan.target_mw, fleet_state.devices)
-            achievable_mw = sum(setpoints.values())
-            batches = group_by_shard(setpoints, fleet_state.devices)
+            planned_achievable_mw = achievable_mw = sum(setpoints.values())
+            shard_results = await self._dispatch(input, setpoints, fleet_state, seq=1)
 
-            shard_results = list(
-                await asyncio.gather(
-                    *(
-                        workflow.execute_activity(
-                            "dispatch_shard",
-                            args=[
-                                input.run_id,
-                                input.interval_start,
-                                shard_id,
-                                batch,
-                                1,
-                                input.dispatch_timeout_seconds,
-                            ],
-                            start_to_close_timeout=DISPATCH_TIMEOUT,
-                            heartbeat_timeout=DISPATCH_HEARTBEAT_TIMEOUT,
-                            retry_policy=RETRY_POLICY,
-                            result_type=ShardDispatchResult,
-                            activity_id=f"dispatch:{shard_id}",
-                        )
-                        for shard_id, batch in sorted(batches.items())
-                    )
+            # Devices that never answered are dark: re-rate the Achievable Target without
+            # them, then chase any Shortfall on the Devices that still have Headroom.
+            unresponsive = {d for r in shard_results for d in r.unresponsive}
+            if unresponsive:
+                achievable_mw = rerate_achievable(target_mw, fleet_state.devices, unresponsive)
+            delivered = _merge_delivered({}, shard_results)
+            discharge = target_mw >= 0
+            config = input.reallocation
+            deadline = start_time + timedelta(milliseconds=input.budget_ms * config.deadline_pct)
+            while (
+                rounds < config.max_rounds
+                and workflow.now() < deadline
+                and needs_reallocation(
+                    achievable_mw,
+                    sum(r.delivered_mw for r in shard_results),
+                    config.tolerance_pct,
                 )
-            )
+            ):
+                shortfall = achievable_mw - sum(r.delivered_mw for r in shard_results)
+                extra = reallocate(
+                    shortfall, reallocation_headroom(fleet_state.devices, delivered, discharge)
+                )
+                if not extra:
+                    break
+                rounds += 1
+                reallocated_mw += abs(sum(extra.values()))
+                reallocated_devices.update(extra)
+                # A seq+1 Setpoint is the Device's new total for the interval.
+                totals = {d: delivered[d] + mw for d, mw in extra.items()}
+                round_results = await self._dispatch(input, totals, fleet_state, seq=rounds + 1)
+                shard_results.extend(round_results)
+                delivered = _merge_delivered(delivered, round_results)
+                for r in round_results:
+                    # Went dark mid-interval: keep what it delivered, never ask it again.
+                    for device_id in r.unresponsive:
+                        delivered.pop(device_id, None)
 
         latency_ms = (workflow.now() - start_time).total_seconds() * 1000
         result = IntervalResult(
@@ -177,10 +209,16 @@ class MarketIntervalWorkflow:
             latency_ms=latency_ms,
             budget_ms=input.budget_ms,
             online_devices=len(fleet_state.devices),
-            shard_count=len(shard_results),
+            shard_count=len({r.shard_id for r in shard_results}),
             soc_p10_pct=soc_p10,
             soc_p50_pct=soc_p50,
             soc_p90_pct=soc_p90,
+            planned_achievable_mw=planned_achievable_mw,
+            stale_devices=fleet_state.stale_devices,
+            unresponsive_devices=len(unresponsive),
+            reallocation_rounds=rounds,
+            reallocated_mw=reallocated_mw,
+            reallocated_devices=len(reallocated_devices),
         )
         await workflow.execute_activity(
             "record_interval_result",
@@ -189,6 +227,52 @@ class MarketIntervalWorkflow:
             retry_policy=RETRY_POLICY,
         )
         return result
+
+    async def _dispatch(
+        self,
+        input: MarketIntervalInput,
+        setpoints: dict[str, float],
+        fleet_state: FleetState,
+        seq: int,
+    ) -> list[ShardDispatchResult]:
+        """One Command batch per Shard, all concurrently."""
+        batches = group_by_shard(setpoints, fleet_state.devices)
+        return list(
+            await asyncio.gather(
+                *(
+                    workflow.execute_activity(
+                        "dispatch_shard",
+                        args=[
+                            input.run_id,
+                            input.interval_start,
+                            shard_id,
+                            batch,
+                            seq,
+                            input.dispatch_timeout_seconds,
+                        ],
+                        start_to_close_timeout=DISPATCH_TIMEOUT,
+                        heartbeat_timeout=DISPATCH_HEARTBEAT_TIMEOUT,
+                        retry_policy=RETRY_POLICY,
+                        result_type=ShardDispatchResult,
+                        activity_id=f"dispatch:{shard_id}"
+                        if seq == 1
+                        else f"dispatch:{shard_id}:{seq}",
+                    )
+                    for shard_id, batch in sorted(batches.items())
+                )
+            )
+        )
+
+
+def _merge_delivered(
+    delivered: dict[str, float], results: list[ShardDispatchResult]
+) -> dict[str, float]:
+    """Running MW per Device across this interval's seqs (Devices that acted only)."""
+    merged = dict(delivered)
+    for r in results:
+        for device_id, mw in r.delivered.items():
+            merged[device_id] = merged.get(device_id, 0.0) + mw
+    return merged
 
 
 @workflow.defn
@@ -232,6 +316,7 @@ class ReplayRunWorkflow:
                     dispatch_timeout_seconds=input.dispatch_timeout_seconds,
                     stale_after_seconds=input.stale_after_seconds,
                     budget_ms=seconds_per_interval * 1000,
+                    reallocation=input.reallocation,
                 ),
                 id=f"interval:{input.run_id}:{interval_start.isoformat()}",
                 # A second start of the same interval id is rejected outright, not just

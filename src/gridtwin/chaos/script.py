@@ -15,6 +15,8 @@ class ChaosStep(BaseModel, frozen=True):
     apply: ScenarioName
     for_intervals: int = Field(default=1, ge=1)  # then the controller clears it
     target: str | None = None  # None = the scenario picks (worker-kill: the busy worker)
+    pct: float | None = Field(default=None, ge=0.0, le=1.0)  # partition / telemetry-delay
+    delay_s: float | None = Field(default=None, gt=0.0)  # telemetry-delay
 
 
 class ScenarioWindow(BaseModel, frozen=True):

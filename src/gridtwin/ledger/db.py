@@ -72,7 +72,13 @@ ALTER TABLE interval_results
     ADD COLUMN IF NOT EXISTS soc_p90_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS duplicate_deliveries INT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS duplicate_effects INT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS retried_dispatches INT NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS retried_dispatches INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS planned_achievable_mw DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS stale_devices INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS unresponsive_devices INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS reallocation_rounds INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS reallocated_mw DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS reallocated_devices INT NOT NULL DEFAULT 0;
 
 -- Telemetry: the latest Heartbeat per Device per run, batched in by the ingester.
 CREATE TABLE IF NOT EXISTS device_telemetry (

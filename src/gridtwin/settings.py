@@ -3,6 +3,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from gridtwin.fleet.models import FleetConfig
+from gridtwin.fleet.reallocate import ReallocationConfig
 from gridtwin.telemetry.staleness import stale_after_seconds
 
 
@@ -54,6 +55,12 @@ class Settings(BaseSettings):
 
     dispatch_timeout_seconds: float = 5.0
     tolerance_pct: float = 0.05
+    # Reallocation (ticket 07): at most N seq+1 rounds, started only in the first
+    # REALLOCATION_DEADLINE_PCT of the interval's wall budget; REALLOCATION_RESERVE_PCT of
+    # Fleet State headroom is held back from the planner so a Shortfall has somewhere to go.
+    reallocation_max_rounds: int = 2
+    reallocation_deadline_pct: float = 0.5
+    reallocation_reserve_pct: float = 0.10
 
     # Chaos controller (ticket 05). The Docker socket mount is for local demos only.
     chaos_controller_url: str = "http://localhost:8001"
@@ -64,6 +71,11 @@ class Settings(BaseSettings):
     chaos_restart_delay_seconds: float = 20.0
     chaos_dispatch_wait_seconds: float = 30.0
     chaos_recovery_slo_seconds: float = 15.0
+    # Device partition / telemetry delay (ticket 07): the share of Devices hit, and how
+    # late delayed Heartbeats arrive (wall seconds; > the stale threshold makes them stale).
+    chaos_partition_pct: float = 0.20
+    chaos_telemetry_delay_seconds: float = 10.0
+    chaos_telemetry_delay_pct: float = 0.30
 
     # Ticket 03 appends the market data ingest settings below this line.
     marketdata_cache_dir: str = "data/cache"
@@ -95,6 +107,14 @@ class Settings(BaseSettings):
             self.replay_speed,
             self.telemetry_stale_heartbeats,
             self.telemetry_flush_seconds,
+        )
+
+    def reallocation_config(self) -> ReallocationConfig:
+        return ReallocationConfig(
+            tolerance_pct=self.tolerance_pct,
+            max_rounds=self.reallocation_max_rounds,
+            deadline_pct=self.reallocation_deadline_pct,
+            reserve_pct=self.reallocation_reserve_pct,
         )
 
     def fleet_config(self) -> FleetConfig:

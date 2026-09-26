@@ -63,6 +63,7 @@ def fleet_state_from_telemetry(
         charge_headroom_mw=charge_mw,
         energy_above_floor_mwh=energy_mwh,
         devices=devices,
+        stale_devices=len(heartbeats) - len(devices),
     )
 
 

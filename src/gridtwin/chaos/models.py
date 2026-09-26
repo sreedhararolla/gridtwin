@@ -3,12 +3,14 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-# Ticket 05 ships worker-kill, 06 duplicate-commands; 07-08 add device, telemetry and feed
-# faults.
-ScenarioName = Literal["worker-kill", "duplicate-commands"]
-# duplicate-commands hits every simulator at once; this is its event-log target.
+# Ticket 05 ships worker-kill, 06 duplicate-commands, 07 partition and telemetry-delay;
+# 08 adds feed faults.
+ScenarioName = Literal["worker-kill", "duplicate-commands", "partition", "telemetry-delay"]
+# Scenarios the chaos controller broadcasts to every simulator at once; this is their
+# event-log target.
+SIMULATOR_SCENARIOS = ("duplicate-commands", "partition", "telemetry-delay")
 SIMULATORS_TARGET = "simulators"
 ChaosAction = Literal["apply", "clear"]
 
@@ -35,6 +37,10 @@ class ApplyChaosRequest(BaseModel):
     target: str | None = None
     # How long the fault lasts before the controller clears it; None = the default.
     duration_s: float | None = None
+    # partition / telemetry-delay: the share of Devices hit (0-1); None = the default.
+    pct: float | None = Field(default=None, ge=0.0, le=1.0)
+    # telemetry-delay: how late Heartbeats arrive, wall seconds; None = the default.
+    delay_s: float | None = Field(default=None, gt=0.0)
 
 
 class ClearChaosRequest(BaseModel):

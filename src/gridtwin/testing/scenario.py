@@ -2,7 +2,7 @@
 test environment, the in-memory transport, telemetry and ledger - and returns a Scenario
 Report, the system-level test seam (ADR-005, docs/SPEC.md Testing Decisions)."""
 
-from datetime import date
+from datetime import date, datetime
 from statistics import median
 
 from pydantic import BaseModel
@@ -10,13 +10,16 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
+from gridtwin.chaos.script import ChaosScript, ChaosStep, select_window
 from gridtwin.chaos.slo import within_tolerance_pct
 from gridtwin.dispatch.activities import DispatchActivities
 from gridtwin.dispatch.publish import NullPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunInput, ReplayRunWorkflow
 from gridtwin.fleet.models import FleetConfig
+from gridtwin.fleet.reallocate import ReallocationConfig
 from gridtwin.ledger.memory_repo import InMemoryLedgerRepo
 from gridtwin.ledger.models import IntervalResult, LedgerIntervalSummary
+from gridtwin.marketdata.prices import load_day_prices
 from gridtwin.telemetry.repo import InMemoryTelemetryRepo
 from gridtwin.transport.memory import InMemoryTransport
 
@@ -41,6 +44,11 @@ class ScenarioReport(BaseModel):
     missed_intervals: int = 0
     chaos_events: int = 0
     retried_dispatches: int = 0
+    # Staleness and Reallocation (ticket 07).
+    max_stale_devices: int = 0
+    unresponsive_devices: int = 0  # summed over intervals
+    reallocation_rounds: int = 0  # summed over intervals
+    reallocated_mw: float = 0.0  # summed over intervals
 
 
 class ScenarioResult(BaseModel):
@@ -48,6 +56,59 @@ class ScenarioResult(BaseModel):
     results: list[IntervalResult]
     ledger: list[LedgerIntervalSummary] = []
     ledger_rows: int = 0  # Commands in the ledger: one row per Idempotency Key
+    chaos_steps: list[tuple[int, str, str]] = []  # (window index, scenario, apply|clear)
+
+
+class InProcessChaos:
+    """The in-process stand-in for the simulators' heartbeat loop and the chaos controller.
+
+    Called just before each interval's Fleet State is read: every live Device heartbeats
+    (on the workflow's clock), then any Chaos Script step due at this interval is applied or
+    cleared. A step therefore lands *after* the interval's telemetry and before its dispatch,
+    the worst case for a partition: Devices that looked online get Commands they never see.
+    """
+
+    def __init__(
+        self,
+        transport: InMemoryTransport,
+        steps: list[ChaosStep],
+        window: list[datetime],
+        partition_pct: float,
+        delay_s: float,
+        delay_pct: float,
+    ) -> None:
+        self._transport = transport
+        self._index = {interval_start: i for i, interval_start in enumerate(window)}
+        self._steps = steps
+        self._partition_pct = partition_pct
+        self._delay_s = delay_s
+        self._delay_pct = delay_pct
+        self.events: list[tuple[int, str, str]] = []  # (window index, scenario, apply|clear)
+
+    def __call__(self, interval_start: datetime, now: datetime) -> None:
+        self._transport.tick(now)
+        k = self._index.get(interval_start)
+        if k is None:
+            return
+        for step in self._steps:
+            if step.at_interval == k:
+                self._set(step, active=True)
+                self.events.append((k, step.apply, "apply"))
+            elif step.at_interval + step.for_intervals == k:
+                self._set(step, active=False)
+                self.events.append((k, step.apply, "clear"))
+
+    def _set(self, step: ChaosStep, active: bool) -> None:
+        for shard in self._transport.shards.values():
+            if step.apply == "partition":
+                shard.set_partition((step.pct or self._partition_pct) if active else 0.0)
+            elif step.apply == "telemetry-delay":
+                delay_s = step.delay_s or self._delay_s
+                shard.set_telemetry_delay(delay_s if active else 0.0, step.pct or self._delay_pct)
+            elif step.apply == "duplicate-commands":
+                shard.set_duplicates(active)
+            else:
+                raise ValueError(f"{step.apply} needs compose mode (make test-e2e)")
 
 
 async def run_scenario(
@@ -64,16 +125,38 @@ async def run_scenario(
     tolerance_pct: float = 0.05,
     duplicate_commands: bool = False,
     partial_send_failures: int = 0,
+    script: ChaosScript | None = None,
+    reallocation: ReallocationConfig | None = None,
+    partition_pct: float = 0.2,
+    telemetry_delay_s: float = 10.0,
+    telemetry_delay_pct: float = 0.3,
 ) -> ScenarioResult:
     """`duplicate_commands` runs the whole replay under the duplicate-commands Chaos
     Scenario; `partial_send_failures` = n makes the first n Shard batches fail after a
-    partial send, forcing Temporal to retry those dispatches."""
+    partial send, forcing Temporal to retry those dispatches. `script` replays a Chaos
+    Script's window and steps in-process (the same scenarios/*.yaml `make chaos` runs)."""
     repo = InMemoryLedgerRepo()
     telemetry = InMemoryTelemetryRepo()
     transport = InMemoryTransport(telemetry=telemetry, duplicates=duplicate_commands)
     transport.fail_after_partial_send = partial_send_failures
+    window: list[datetime] | None = None
+    if script is not None:
+        rows = load_day_prices(settlement_point, day, fixture_path)
+        window = select_window([interval_start for interval_start, _ in rows], script.window)
+    chaos = InProcessChaos(
+        transport,
+        script.steps if script else [],
+        window or [],
+        partition_pct,
+        telemetry_delay_s,
+        telemetry_delay_pct,
+    )
     activities = DispatchActivities(
-        repo=repo, telemetry=telemetry, transport=transport, publisher=NullPublisher()
+        repo=repo,
+        telemetry=telemetry,
+        transport=transport,
+        publisher=NullPublisher(),
+        on_fleet_state=chaos,
     )
 
     async with await WorkflowEnvironment.start_time_skipping(
@@ -96,6 +179,8 @@ async def run_scenario(
                 replay_speed=replay_speed,
                 dispatch_timeout_seconds=dispatch_timeout_seconds,
                 stale_after_seconds=stale_after_seconds,
+                interval_starts=window,
+                reallocation=reallocation or ReallocationConfig(tolerance_pct=tolerance_pct),
             )
             handle = await env.client.start_workflow(
                 ReplayRunWorkflow.run,
@@ -111,6 +196,7 @@ async def run_scenario(
         results=results,
         ledger=repo.ledger_summary(run_id),
         ledger_rows=repo.command_counts(run_id)[0],
+        chaos_steps=chaos.events,
     )
 
 
@@ -140,4 +226,8 @@ def build_report(results: list[IntervalResult], tolerance_pct: float) -> Scenari
         median_dispatch_ms=median(latencies),
         max_shards_per_interval=max(r.shard_count for r in results),
         min_online_devices=min(r.online_devices for r in results),
+        max_stale_devices=max(r.stale_devices for r in results),
+        unresponsive_devices=sum(r.unresponsive_devices for r in results),
+        reallocation_rounds=sum(r.reallocation_rounds for r in results),
+        reallocated_mw=sum(r.reallocated_mw for r in results),
     )

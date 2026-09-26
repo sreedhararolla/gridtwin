@@ -9,8 +9,8 @@ calls it directly for the in-process Scenario Runner.
 
 import random
 import zlib
-from collections import Counter
-from datetime import UTC, datetime
+from collections import Counter, deque
+from datetime import UTC, datetime, timedelta
 
 from gridtwin.fleet.device import apply_command, ignored_ack, screen_command
 from gridtwin.fleet.models import Ack, BatchReply, Command, DeviceState, Heartbeat, ShardReset
@@ -32,6 +32,11 @@ class ShardSimulator:
         self._rng = random.Random(0)
         self._chaos_rng = random.Random(0)
         self._duplicates = False
+        self._shard_seed = 0
+        self._partitioned: set[str] = set()  # Devices whose Commands and Heartbeats drop
+        self._delayed: set[str] = set()  # Devices whose Heartbeats arrive late
+        self._delay = timedelta(0)
+        self._delay_queue: deque[Heartbeat] = deque()
         self._reset_memory()
 
     def _reset_memory(self) -> None:
@@ -40,6 +45,8 @@ class ShardSimulator:
         self._effects: Counter[str] = Counter()  # key -> times a Device acted on it
         self._clock: dict[str, datetime] = {}  # device -> latest interval it acted in
         self._seq: dict[tuple[str, datetime], int] = {}  # (device, interval) -> highest seq
+        # (device, interval) -> MW delivered so far in that interval, across seqs
+        self._interval_mw: dict[tuple[str, datetime], float] = {}
         self._previous_batch: list[Command] = []
 
     def reset(self, reset: ShardReset) -> None:
@@ -53,6 +60,10 @@ class ShardSimulator:
         shard_seed = reset.seed ^ zlib.crc32(reset.shard_id.encode())
         self._rng = random.Random(shard_seed)
         self._chaos_rng = random.Random(shard_seed ^ 0xD0B1E)
+        self._shard_seed = shard_seed
+        self._partitioned = set()
+        self._delayed = set()
+        self._delay_queue.clear()
         self._reset_memory()
 
     def set_duplicates(self, active: bool) -> None:
@@ -63,6 +74,37 @@ class ShardSimulator:
     @property
     def duplicates(self) -> bool:
         return self._duplicates
+
+    def _pick(self, pct: float, salt: int) -> set[str]:
+        """A seeded `pct` share of this shard's Devices: the same run, seed and pct always
+        pick the same Devices."""
+        ids = sorted(self._devices)
+        count = round(pct * len(ids))
+        return set(random.Random(self._shard_seed ^ salt).sample(ids, count)) if count else set()
+
+    def set_partition(self, pct: float) -> None:
+        """The device-partition Chaos Scenario: `pct` of Devices go dark. Their Commands are
+        dropped (no Ack) and they send no Heartbeats until the partition clears (pct 0)."""
+        self._partitioned = self._pick(pct, 0x9A27) if pct > 0 else set()
+
+    @property
+    def partitioned(self) -> set[str]:
+        return set(self._partitioned)
+
+    def set_telemetry_delay(self, delay_s: float, pct: float = 1.0) -> None:
+        """The telemetry-delay Chaos Scenario: `pct` of Devices' Heartbeats reach telemetry
+        `delay_s` late, keeping their original `sent_at`. delay_s 0 clears it; whatever
+        was held back is released on the next `heartbeats` call."""
+        if delay_s > 0 and pct > 0:
+            self._delayed = self._pick(pct, 0xDE1A)
+            self._delay = timedelta(seconds=delay_s)
+        else:
+            self._delayed = set()
+            self._delay = timedelta(0)
+
+    @property
+    def delayed(self) -> set[str]:
+        return set(self._delayed)
 
     def handle_batch(self, commands: list[Command]) -> BatchReply:
         counts: Counter[str] = Counter()
@@ -85,6 +127,8 @@ class ShardSimulator:
     def _deliver(self, commands: list[Command], counts: Counter[str]) -> list[Ack]:
         acks = []
         for command in commands:
+            if command.device_id in self._partitioned:
+                continue  # never reaches the Device, so no Ack comes back
             key = command.idempotency_key
             if key in self._received:
                 counts["duplicate_deliveries"] += 1
@@ -120,7 +164,9 @@ class ShardSimulator:
 
         faulted = self._fault_rate > 0 and self._rng.random() < self._fault_rate
         factor = 1.0 + self._rng.gauss(0.0, self._noise_pct) if self._noise_pct > 0 else 1.0
-        new_state, ack = apply_command(state, command, factor, faulted)
+        interval_key = (command.device_id, command.interval_start)
+        already_mw = self._interval_mw.get(interval_key, 0.0)
+        new_state, ack = apply_command(state, command, factor, faulted, already_mw)
         # The Device's answer to a key is final: a redelivery gets this Ack back, so
         # duplicates change nothing, not even whether a faulted Command acts later.
         self._acks[command.idempotency_key] = ack
@@ -132,21 +178,34 @@ class ShardSimulator:
         clock = self._clock.get(command.device_id)
         if clock is None or command.interval_start > clock:
             self._clock[command.device_id] = command.interval_start
-        self._seq[(command.device_id, command.interval_start)] = command.seq
+        self._seq[interval_key] = command.seq
+        self._interval_mw[interval_key] = already_mw + ack.delivered_mw
         return ack
 
     def heartbeats(self, now: datetime | None = None) -> list[Heartbeat]:
+        """This period's Heartbeats as they reach telemetry: none from partitioned Devices,
+        and a delayed Device's Heartbeat only once it is `delay` old."""
         sent_at = now or datetime.now(UTC)
-        return [
-            Heartbeat(
+        out = []
+        for device_id, state in self._devices.items():
+            if device_id in self._partitioned:
+                continue
+            beat = Heartbeat(
                 run_id=self._run_id,
                 state=state,
                 power_mw=self._power_mw.get(device_id, 0.0),
                 healthy=True,
                 sent_at=sent_at,
             )
-            for device_id, state in self._devices.items()
-        ]
+            if device_id in self._delayed:
+                self._delay_queue.append(beat)
+            else:
+                out.append(beat)
+        while self._delay_queue and (
+            not self._delayed or self._delay_queue[0].sent_at <= sent_at - self._delay
+        ):
+            out.append(self._delay_queue.popleft())
+        return out
 
     def snapshot(self) -> list[DeviceState]:
         return list(self._devices.values())
