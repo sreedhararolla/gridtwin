@@ -67,10 +67,13 @@ def solve(
     config: LpConfig,
     end_value: float,
     holdback_usd_per_mwh_h: list[float] | None = None,
+    floor_mwh_by_interval: list[float] | None = None,
 ) -> Schedule:
     """The optimal schedule for `prices` (one per Market Interval). `holdback_usd_per_mwh_h`
     (lp_risk) is a planning-only value per MWh stored through each interval: a soft SoC
-    holdback. It is not part of the settled value."""
+    holdback. It is not part of the settled value. `floor_mwh_by_interval` (Storm mode) is a
+    Dynamic Reserve Floor the energy after each interval must meet (beyond it, the fleet's
+    floor); a raised floor the fleet cannot charge up to in time is met as far as it can be."""
     n = len(prices)
     if n == 0:
         return Schedule(charge_mw=[], discharge_mw=[], energy_mwh=[])
@@ -105,10 +108,22 @@ def solve(
     # A fleet that starts below the floor may not be pushed further below it.
     floor = min(fleet.floor_mwh, fleet.energy_mwh)
     capacity = max(fleet.capacity_mwh, fleet.energy_mwh)
+    energy_bounds = [(floor, capacity)] * n
+    if floor_mwh_by_interval:
+        step_mwh = fleet.round_trip_efficiency * max(fleet.max_charge_mw, 0.0) * dt
+        energy_bounds = [
+            (
+                max(floor, min(dynamic, fleet.energy_mwh + step_mwh * (t + 1), capacity))
+                if dynamic > fleet.floor_mwh
+                else floor,
+                capacity,
+            )
+            for t, dynamic in enumerate(floor_mwh_by_interval[:n])
+        ] + [(floor, capacity)] * max(n - len(floor_mwh_by_interval), 0)
     bounds = (
         [(0.0, max(fleet.max_charge_mw, 0.0))] * n
         + [(0.0, max(fleet.max_discharge_mw, 0.0))] * n
-        + [(floor, capacity)] * n
+        + energy_bounds
     )
     result = linprog(cost, A_eq=a_eq, b_eq=b_eq, bounds=bounds, method="highs")
     if not result.success:

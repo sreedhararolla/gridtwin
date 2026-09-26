@@ -19,12 +19,14 @@ const STRATEGY_COLORS: Record<string, string> = {
   naive: "#94a3b8",
   lp: "#2dd4bf",
   lp_risk: "#fde047", // the Risk Curve's colour on the Live tab
+  lp_storm: "#818cf8",
   perfect_foresight: "#e2e8f0",
 };
 const STRATEGY_LABELS: Record<string, string> = {
   naive: "naive",
   lp: "lp",
   lp_risk: "lp + risk",
+  lp_storm: "lp + storm reserve",
   perfect_foresight: "perfect foresight",
 };
 const DAYS_PER_MONTH = 365.25 / 12;

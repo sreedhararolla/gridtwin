@@ -102,7 +102,8 @@ def test_perfect_foresight_bounds_lp_risk():
             date(2026, 2, 1 + i % 28), actual, forecast, "dam_spp", FLEET, CONFIG, 90, 20, risk
         )
         values = {r.strategy: r.value_usd for r in results}
-        assert set(values) == {"naive", "lp", "lp_risk", "perfect_foresight"}
+        assert set(values) == {"naive", "lp", "lp_risk", "lp_storm", "perfect_foresight"}
+        assert values["lp_storm"] == values["lp"]  # no Storm floors: lp_storm is lp
         assert values["perfect_foresight"] >= values["lp_risk"] - 1e-4
         assert next(r for r in results if r.strategy == "lp_risk").forecast_source == (
             "dam_spp+risk"

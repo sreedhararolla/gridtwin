@@ -332,6 +332,24 @@ export interface components {
             summary: components["schemas"]["StrategySummary"][];
             /** Days */
             days: components["schemas"]["DayResult"][];
+            /**
+             * @default {
+             *       "enabled": false,
+             *       "storm_floor_pct": 0.6,
+             *       "risk_threshold": 0.25,
+             *       "outage_threshold_mw": 20000,
+             *       "heat_threshold_c": 35,
+             *       "cold_threshold_c": -5,
+             *       "lead_intervals": 8,
+             *       "home_backup_load_kw": 1.5
+             *     }
+             */
+            storm_config: components["schemas"]["StormConfig"];
+            /**
+             * Storm
+             * @default []
+             */
+            storm: components["schemas"]["StormDay"][];
         };
         /** CachedDay */
         CachedDay: {
@@ -709,6 +727,19 @@ export interface components {
             /** Delivered Mw */
             delivered_mw: number;
         };
+        /**
+         * MemberCard
+         * @description 'Why is your battery at 60% tonight?': every sentence comes from a Reserve Reason
+         *     or the decision's numbers (a template, no LLM).
+         */
+        MemberCard: {
+            /** Headline */
+            headline: string;
+            /** Reasons */
+            reasons: string[];
+            /** Reserve */
+            reserve: string;
+        };
         /** PricePoint */
         PricePoint: {
             /**
@@ -739,6 +770,26 @@ export interface components {
             interval_start: string;
             /** Recovery S */
             recovery_s: number | null;
+        };
+        /**
+         * ReserveReason
+         * @description One signal over its threshold: the structured input to the Member Card.
+         */
+        ReserveReason: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grid_tight" | "outages" | "heat" | "cold";
+            /** Value */
+            value: number;
+            /** Threshold */
+            threshold: number;
+            /**
+             * Lead Intervals
+             * @default 0
+             */
+            lead_intervals: number;
         };
         /** RiskDay */
         RiskDay: {
@@ -865,6 +916,94 @@ export interface components {
         StartedRun: {
             /** Run Id */
             run_id: string;
+        };
+        /** StormConfig */
+        StormConfig: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Storm Floor Pct
+             * @default 0.6
+             */
+            storm_floor_pct: number;
+            /**
+             * Risk Threshold
+             * @default 0.25
+             */
+            risk_threshold: number;
+            /**
+             * Outage Threshold Mw
+             * @default 20000
+             */
+            outage_threshold_mw: number;
+            /**
+             * Heat Threshold C
+             * @default 35
+             */
+            heat_threshold_c: number;
+            /**
+             * Cold Threshold C
+             * @default -5
+             */
+            cold_threshold_c: number;
+            /**
+             * Lead Intervals
+             * @default 8
+             */
+            lead_intervals: number;
+            /**
+             * Home Backup Load Kw
+             * @default 1.5
+             */
+            home_backup_load_kw: number;
+        };
+        /**
+         * StormDay
+         * @description One backtest day on which Storm mode raised the Reserve Floor: the trade-off panel's
+         *     row and the Member Card from the first raised interval.
+         */
+        StormDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Raised Intervals */
+            raised_intervals: number;
+            /**
+             * First Raised Utc
+             * Format: date-time
+             */
+            first_raised_utc: string;
+            /** Base Floor Pct */
+            base_floor_pct: number;
+            /** Max Floor Pct */
+            max_floor_pct: number;
+            /** Lp Value Usd */
+            lp_value_usd: number;
+            /** Lp Storm Value Usd */
+            lp_storm_value_usd: number;
+            tradeoff: components["schemas"]["StormTradeoff"];
+            /** Reasons */
+            reasons: components["schemas"]["ReserveReason"][];
+            card: components["schemas"]["MemberCard"] | null;
+        };
+        /**
+         * StormTradeoff
+         * @description $ forgone vs backup hours gained, from the same backtest schedules.
+         */
+        StormTradeoff: {
+            /** Usd Forgone */
+            usd_forgone: number;
+            /** Backup Hours Base */
+            backup_hours_base: number;
+            /** Backup Hours Storm */
+            backup_hours_storm: number;
+            /** Backup Hours Gained */
+            backup_hours_gained: number;
         };
         /** StrategySummary */
         StrategySummary: {

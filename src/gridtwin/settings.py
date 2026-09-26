@@ -8,6 +8,7 @@ from gridtwin.fleet.reallocate import ReallocationConfig
 from gridtwin.planner.models import LpConfig
 from gridtwin.replay.breaker import BreakerConfig
 from gridtwin.replay.feed import ValidatorConfig
+from gridtwin.storm.reserve import StormConfig
 from gridtwin.telemetry.staleness import stale_after_seconds
 
 
@@ -68,6 +69,19 @@ class Settings(BaseSettings):
     risk_weather_city: str = "houston"
     risk_holdback_usd_per_mwh_h: float = 40.0
     risk_holdback_lookahead_intervals: int = 4
+
+    # Storm mode (ticket 14): the Dynamic Reserve Floor rises to STORM_FLOOR_PCT when the
+    # Risk Curve's p(spike) reaches STORM_RISK_THRESHOLD within STORM_LEAD_INTERVALS, outage
+    # capacity reaches STORM_OUTAGE_THRESHOLD_MW, or the temperature crosses a threshold.
+    # STORM_MODE turns it on for Replay Runs; `make backtest` always reports it (lp_storm).
+    storm_mode: bool = False
+    storm_floor_pct: float = 0.60
+    storm_risk_threshold: float = 0.25
+    storm_outage_threshold_mw: float = 20000.0
+    storm_heat_threshold_c: float = 35.0
+    storm_cold_threshold_c: float = -5.0
+    storm_lead_intervals: int = 8
+    storm_home_backup_load_kw: float = 1.5
 
     dispatch_timeout_seconds: float = 5.0
     tolerance_pct: float = 0.05
@@ -141,6 +155,18 @@ class Settings(BaseSettings):
             horizon_intervals=self.planner_horizon_intervals,
             holdback_usd_per_mwh_h=self.risk_holdback_usd_per_mwh_h,
             holdback_lookahead_intervals=self.risk_holdback_lookahead_intervals,
+        )
+
+    def storm_config(self, enabled: bool | None = None) -> StormConfig:
+        return StormConfig(
+            enabled=self.storm_mode if enabled is None else enabled,
+            storm_floor_pct=self.storm_floor_pct,
+            risk_threshold=self.storm_risk_threshold,
+            outage_threshold_mw=self.storm_outage_threshold_mw,
+            heat_threshold_c=self.storm_heat_threshold_c,
+            cold_threshold_c=self.storm_cold_threshold_c,
+            lead_intervals=self.storm_lead_intervals,
+            home_backup_load_kw=self.storm_home_backup_load_kw,
         )
 
     def reallocation_config(self) -> ReallocationConfig:

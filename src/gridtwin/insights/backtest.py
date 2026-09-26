@@ -19,13 +19,16 @@ from gridtwin.marketdata.prices import load_day_prices
 from gridtwin.planner.backtest import (
     BacktestReport,
     DayResult,
-    backtest_day,
+    backtest_day_schedules,
     fit_forecast,
+    storm_day,
     summarize,
 )
 from gridtwin.planner.lp import FleetAggregate, LpConfig, solve, terminal_value
 from gridtwin.risk.store import risk_curve
 from gridtwin.settings import settings
+from gridtwin.storm.reserve import StormDay, decide_reserve
+from gridtwin.storm.signals import storm_signals
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +64,12 @@ def time_solves(prices: list[list[float]], fleet: FleetAggregate, config: LpConf
 
 def run_backtest(settlement_point: str) -> BacktestReport:
     fleet = fleet_aggregate()
+    fleet_config = settings.fleet_config()
     config = settings.lp_config()
+    storm = settings.storm_config(enabled=True)  # lp_storm is always reported
     days = sorted(d for d in cache.cached_days("rt_spp", "ALL") if d >= cache.RTCB_GO_LIVE)
     results: list[DayResult] = []
+    storm_days: list[StormDay] = []
     actuals: list[list[float]] = []
     for day in days:
         rows = load_day_prices(settlement_point, day, settings.fixture_path)
@@ -76,24 +82,39 @@ def run_backtest(settlement_point: str) -> BacktestReport:
             logger.info("skip %s: no forecast (no DAM and no previous RT day)", day)
             continue
         risk = {}
+        decisions = {}
         for t, start in enumerate(starts):
             curve = risk_curve(settlement_point, start)
             if curve is not None:
                 risk[t] = (curve.p_spike, curve.spike_premium_usd_per_mwh)
+            signals = storm_signals(settlement_point, start, settings.risk_weather_city)
+            decisions[t] = decide_reserve(signals, fleet_config.reserve_floor_pct, storm)
         actuals.append(actual)
-        results.extend(
-            backtest_day(
-                day,
-                actual,
-                forecast,
-                source,
-                fleet,
-                config,
-                settings.naive_discharge_threshold_usd,
-                settings.naive_charge_threshold_usd,
-                risk,
-            )
+        day_results, schedules = backtest_day_schedules(
+            day,
+            actual,
+            forecast,
+            source,
+            fleet,
+            config,
+            settings.naive_discharge_threshold_usd,
+            settings.naive_charge_threshold_usd,
+            risk,
+            {t: d.floor_by_interval_pct for t, d in decisions.items()},
         )
+        results.extend(day_results)
+        row = storm_day(
+            day,
+            starts,
+            decisions,
+            day_results,
+            schedules,
+            fleet,
+            fleet_config.energy_kwh,
+            storm,
+        )
+        if row is not None:
+            storm_days.append(row)
     timings = time_solves(actuals, fleet, config)
     return BacktestReport(
         settlement_point=settlement_point,
@@ -109,6 +130,8 @@ def run_backtest(settlement_point: str) -> BacktestReport:
         lp_solve_ms_max=max(timings, default=0.0),
         summary=summarize(results, fleet.max_discharge_mw),
         days=results,
+        storm_config=storm,
+        storm=storm_days,
     )
 
 
@@ -147,6 +170,19 @@ def main() -> None:
         d for d, v in by_day.items() if any(v["perfect_foresight"] < x - 0.01 for x in v.values())
     ]
     print(f"days where perfect foresight < another strategy: {len(violations)}")
+    storm = report.storm
+    print(
+        f"storm mode: floor raised to {report.storm_config.storm_floor_pct:.0%} on "
+        f"{len(storm)} days, ${sum(s.tradeoff.usd_forgone for s in storm):,.0f} forgone vs lp, "
+        f"+{statistics.median(s.tradeoff.backup_hours_gained for s in storm) if storm else 0:.1f} "
+        "h backup per home (median day)"
+    )
+    for s in sorted(storm, key=lambda s: -s.tradeoff.usd_forgone)[:5]:
+        print(
+            f"  {s.day} {s.raised_intervals:>3} raised intervals  "
+            f"${s.tradeoff.usd_forgone:>8,.0f} forgone  "
+            f"{s.tradeoff.backup_hours_base:.1f} -> {s.tradeoff.backup_hours_storm:.1f} h backup"
+        )
     print(
         f"96-interval LP solve: p50 {report.lp_solve_ms_p50:.1f} ms, "
         f"max {report.lp_solve_ms_max:.1f} ms"
