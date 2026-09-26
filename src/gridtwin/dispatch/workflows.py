@@ -14,7 +14,16 @@ from datetime import date, datetime, timedelta
 from pydantic import BaseModel
 from temporalio import workflow
 from temporalio.common import RetryPolicy, WorkflowIDReusePolicy
+from temporalio.exceptions import ActivityError
 
+from gridtwin.dispatch.ladder import (
+    FeedGuard,
+    FeedStatus,
+    LadderConfig,
+    cache_plan,
+    degraded_target_mw,
+    step,
+)
 from gridtwin.fleet.disaggregate import disaggregate
 from gridtwin.fleet.fleet import group_by_shard, soc_band
 from gridtwin.fleet.models import FleetConfig
@@ -28,7 +37,9 @@ from gridtwin.fleet.reallocate import (
 )
 from gridtwin.ledger.models import IntervalResult
 from gridtwin.planner.models import FleetPlan, FleetState
-from gridtwin.replay.models import MarketSnapshot
+from gridtwin.replay.breaker import allow, record_failure, record_success
+from gridtwin.replay.feed import FeedReading, remember, validate_snapshot
+from gridtwin.replay.models import FeedError, MarketSnapshot
 
 # Worker-kill resilience (ticket 05): a short activity lost with its worker is retried on
 # the surviving worker after ACTIVITY_TIMEOUT; a lost `dispatch_shard` after
@@ -75,6 +86,8 @@ class MarketIntervalInput(BaseModel, frozen=True):
     stale_after_seconds: float
     budget_ms: float
     reallocation: ReallocationConfig = ReallocationConfig()
+    ladder: LadderConfig = LadderConfig()
+    guard: FeedGuard = FeedGuard()  # the ladder state the previous interval left
 
 
 class ReplayRunInput(BaseModel):
@@ -91,27 +104,32 @@ class ReplayRunInput(BaseModel):
     interval_starts: list[datetime] | None = None  # None => load from the replay day
     seeded: bool = False
     reallocation: ReallocationConfig = ReallocationConfig()
+    ladder: LadderConfig = LadderConfig()
+    guard: FeedGuard = FeedGuard()  # carried across continue-as-new
+
+
+class IntervalOutcome(BaseModel, frozen=True):
+    result: IntervalResult
+    guard: FeedGuard  # the ladder state the next interval starts from
 
 
 @workflow.defn
 class MarketIntervalWorkflow:
     @workflow.run
-    async def run(self, input: MarketIntervalInput) -> IntervalResult:
+    async def run(self, input: MarketIntervalInput) -> IntervalOutcome:
         start_time = workflow.now()
-        level = "L0"
-        snapshot: MarketSnapshot | None = None
-        try:
-            snapshot = await workflow.execute_activity(
-                "get_market_snapshot",
-                args=[input.interval_start, input.settlement_point, input.day, input.fixture_path],
-                start_to_close_timeout=ACTIVITY_TIMEOUT,
-                retry_policy=RETRY_POLICY,
-                result_type=MarketSnapshot,
+        snapshot, guard, feed_status, feed_detail = await self._snapshot(input)
+        level = guard.level
+        if level != input.guard.level:
+            workflow.logger.info(
+                "degradation %s -> %s at %s (%s: %s)",
+                input.guard.level,
+                level,
+                input.interval_start.isoformat(),
+                feed_status,
+                feed_detail or "feed clean",
+                extra={"run_id": input.run_id, "interval_start": input.interval_start.isoformat()},
             )
-        except Exception:
-            # Ticket 08 adds the full degradation ladder (L1 cached plan, L2 safe rule,
-            # staged recovery). Ticket 02 wires the seam with the L3 Hold fallback.
-            level = "L3"
 
         fleet_state = await workflow.execute_activity(
             "get_fleet_state",
@@ -125,21 +143,23 @@ class MarketIntervalWorkflow:
         target_mw = 0.0
         achievable_mw = 0.0
         planned_achievable_mw = 0.0
-        price = 0.0
+        # The price this interval acted on: the fresh one, else the last valid one.
+        price = snapshot.rt_price_usd_per_mwh if snapshot else guard.history.last_price or 0.0
         shard_results: list[ShardDispatchResult] = []
         unresponsive: set[str] = set()
         rounds = 0
         reallocated_mw = 0.0
         reallocated_devices: set[str] = set()
 
-        if snapshot is not None:
-            price = snapshot.rt_price_usd_per_mwh
+        # The planner needs aggregate headroom only (2,000 devices stay out of it), less
+        # the reserve that gives Reallocation somewhere to go.
+        planning_state = with_reserve(fleet_state, input.reallocation.reserve_pct)
+        target: float | None
+        if level == "L0" and snapshot is not None:
             plan = await workflow.execute_activity(
                 "build_plan",
-                # The planner needs aggregate headroom only (2,000 devices stay out of it),
-                # less the reserve that gives Reallocation somewhere to go.
                 args=[
-                    with_reserve(fleet_state, input.reallocation.reserve_pct),
+                    planning_state,
                     snapshot,
                     input.discharge_threshold_usd,
                     input.charge_threshold_usd,
@@ -148,8 +168,18 @@ class MarketIntervalWorkflow:
                 retry_policy=RETRY_POLICY,
                 result_type=FleetPlan,
             )
-            target_mw = plan.target_mw
-            setpoints = disaggregate(plan.target_mw, fleet_state.devices)
+            target = plan.target_mw
+            guard = cache_plan(guard, input.interval_start, target, input.ladder)
+        else:
+            # Below L0 nothing reads this interval's snapshot: L1 replays the cached plan,
+            # L2 applies the Safe Rule to the last valid price, L3 Holds (None).
+            target = degraded_target_mw(
+                level, guard, planning_state.discharge_headroom_mw, input.discharge_threshold_usd
+            )
+
+        if target is not None:
+            target_mw = target
+            setpoints = disaggregate(target_mw, fleet_state.devices)
             planned_achievable_mw = achievable_mw = sum(setpoints.values())
             shard_results = await self._dispatch(input, setpoints, fleet_state, seq=1)
 
@@ -219,6 +249,8 @@ class MarketIntervalWorkflow:
             reallocation_rounds=rounds,
             reallocated_mw=reallocated_mw,
             reallocated_devices=len(reallocated_devices),
+            feed_status=feed_status,
+            feed_detail=feed_detail,
         )
         await workflow.execute_activity(
             "record_interval_result",
@@ -226,7 +258,56 @@ class MarketIntervalWorkflow:
             start_to_close_timeout=ACTIVITY_TIMEOUT,
             retry_policy=RETRY_POLICY,
         )
-        return result
+        return IntervalOutcome(result=result, guard=guard)
+
+    async def _snapshot(
+        self, input: MarketIntervalInput
+    ) -> tuple[MarketSnapshot | None, FeedGuard, FeedStatus, str]:
+        """Read the feed through the circuit breaker and the validator, then step the
+        Degradation Ladder. Returns the valid snapshot (or None) and the new guard."""
+        config = input.ladder
+        guard = input.guard
+        breaker = allow(guard.breaker, input.interval_start, config.breaker)
+        snapshot: MarketSnapshot | None = None
+        status: FeedStatus = "ok"
+        detail = ""
+        if breaker.status == "open":
+            status, detail = "circuit-open", "feed circuit open: not called this interval"
+        else:
+            try:
+                reading = await workflow.execute_activity(
+                    "read_feed",
+                    args=[
+                        input.run_id,
+                        input.interval_start,
+                        input.settlement_point,
+                        input.day,
+                        input.fixture_path,
+                    ],
+                    start_to_close_timeout=ACTIVITY_TIMEOUT,
+                    retry_policy=RETRY_POLICY,
+                    result_type=FeedReading,
+                )
+                snapshot = validate_snapshot(reading, guard.history, config.validator)
+            except ActivityError as err:
+                status, detail = "outage", str(err.cause or err)
+            except FeedError as err:
+                status, detail = "rejected", str(err)
+            if snapshot is None:
+                breaker = record_failure(breaker, input.interval_start, config.breaker)
+            else:
+                breaker = record_success(breaker)
+
+        history = guard.history
+        if snapshot is not None:
+            history = remember(history, snapshot, config.validator)
+        guard = step(
+            guard.model_copy(update={"breaker": breaker, "history": history}),
+            input.interval_start,
+            snapshot is not None,
+            config,
+        )
+        return snapshot, guard, status, detail
 
     async def _dispatch(
         self,
@@ -300,10 +381,11 @@ class ReplayRunWorkflow:
         seconds_per_interval = INTERVAL_SECONDS / input.replay_speed
         remaining = list(interval_starts)
         processed = 0
+        guard = input.guard
         while remaining and processed < CONTINUE_AS_NEW_EVERY:
             interval_start = remaining.pop(0)
             started = workflow.now()
-            await workflow.execute_child_workflow(
+            outcome = await workflow.execute_child_workflow(
                 MarketIntervalWorkflow.run,
                 MarketIntervalInput(
                     run_id=input.run_id,
@@ -317,6 +399,8 @@ class ReplayRunWorkflow:
                     stale_after_seconds=input.stale_after_seconds,
                     budget_ms=seconds_per_interval * 1000,
                     reallocation=input.reallocation,
+                    ladder=input.ladder,
+                    guard=guard,
                 ),
                 id=f"interval:{input.run_id}:{interval_start.isoformat()}",
                 # A second start of the same interval id is rejected outright, not just
@@ -324,6 +408,7 @@ class ReplayRunWorkflow:
                 id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
                 task_timeout=WORKFLOW_TASK_TIMEOUT,
             )
+            guard = outcome.guard
             processed += 1
             if remaining:
                 # Hold the replay cadence: the interval's dispatch time comes out of its
@@ -334,5 +419,7 @@ class ReplayRunWorkflow:
 
         if remaining:
             workflow.continue_as_new(
-                input.model_copy(update={"interval_starts": remaining, "seeded": True})
+                input.model_copy(
+                    update={"interval_starts": remaining, "seeded": True, "guard": guard}
+                )
             )

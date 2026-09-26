@@ -10,9 +10,11 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
+from gridtwin.chaos.models import FEED_SCENARIOS
 from gridtwin.chaos.script import ChaosScript, ChaosStep, select_window
 from gridtwin.chaos.slo import within_tolerance_pct
 from gridtwin.dispatch.activities import DispatchActivities
+from gridtwin.dispatch.ladder import LEVELS, DegradationEvent, LadderConfig, degradation_timeline
 from gridtwin.dispatch.publish import NullPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunInput, ReplayRunWorkflow
 from gridtwin.fleet.models import FleetConfig
@@ -49,6 +51,10 @@ class ScenarioReport(BaseModel):
     unresponsive_devices: int = 0  # summed over intervals
     reallocation_rounds: int = 0  # summed over intervals
     reallocated_mw: float = 0.0  # summed over intervals
+    # Degradation Ladder (ticket 08): transitions and rejected snapshots, in order.
+    # `degradation_events` counts them.
+    degradation_timeline: list[DegradationEvent] = []
+    worst_level: str = "L0"
 
 
 class ScenarioResult(BaseModel):
@@ -98,7 +104,22 @@ class InProcessChaos:
                 self._set(step, active=False)
                 self.events.append((k, step.apply, "clear"))
 
+    def feed_faults(self, _run_id: str, interval_start: datetime) -> set[str]:
+        """The feed Chaos Scenarios on at this interval: the replay feed's view of the
+        script (feed faults need no transport, so they are looked up, not switched)."""
+        k = self._index.get(interval_start)
+        if k is None:
+            return set()
+        return {
+            step.apply
+            for step in self._steps
+            if step.apply in FEED_SCENARIOS
+            and step.at_interval <= k < step.at_interval + step.for_intervals
+        }
+
     def _set(self, step: ChaosStep, active: bool) -> None:
+        if step.apply in FEED_SCENARIOS:
+            return  # read by `feed_faults` instead
         for shard in self._transport.shards.values():
             if step.apply == "partition":
                 shard.set_partition((step.pct or self._partition_pct) if active else 0.0)
@@ -130,6 +151,7 @@ async def run_scenario(
     partition_pct: float = 0.2,
     telemetry_delay_s: float = 10.0,
     telemetry_delay_pct: float = 0.3,
+    ladder: LadderConfig | None = None,
 ) -> ScenarioResult:
     """`duplicate_commands` runs the whole replay under the duplicate-commands Chaos
     Scenario; `partial_send_failures` = n makes the first n Shard batches fail after a
@@ -157,6 +179,7 @@ async def run_scenario(
         transport=transport,
         publisher=NullPublisher(),
         on_fleet_state=chaos,
+        feed_faults=chaos.feed_faults,
     )
 
     async with await WorkflowEnvironment.start_time_skipping(
@@ -181,6 +204,7 @@ async def run_scenario(
                 stale_after_seconds=stale_after_seconds,
                 interval_starts=window,
                 reallocation=reallocation or ReallocationConfig(tolerance_pct=tolerance_pct),
+                ladder=ladder or LadderConfig(),
             )
             handle = await env.client.start_workflow(
                 ReplayRunWorkflow.run,
@@ -211,6 +235,7 @@ def build_report(results: list[IntervalResult], tolerance_pct: float) -> Scenari
         )
 
     latencies = sorted(r.latency_ms for r in results)
+    timeline = degradation_timeline(results)
     p99_index = max(int(len(latencies) * 0.99) - 1, 0)
     value_usd = sum(r.delivered_mw * INTERVAL_HOURS * r.price_usd_per_mwh for r in results)
 
@@ -230,4 +255,7 @@ def build_report(results: list[IntervalResult], tolerance_pct: float) -> Scenari
         unresponsive_devices=sum(r.unresponsive_devices for r in results),
         reallocation_rounds=sum(r.reallocation_rounds for r in results),
         reallocated_mw=sum(r.reallocated_mw for r in results),
+        degradation_events=len(timeline),
+        degradation_timeline=timeline,
+        worst_level=max((r.level for r in results), key=LEVELS.index),
     )

@@ -2,8 +2,11 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from gridtwin.dispatch.ladder import LadderConfig
 from gridtwin.fleet.models import FleetConfig
 from gridtwin.fleet.reallocate import ReallocationConfig
+from gridtwin.replay.breaker import BreakerConfig
+from gridtwin.replay.feed import ValidatorConfig
 from gridtwin.telemetry.staleness import stale_after_seconds
 
 
@@ -61,6 +64,16 @@ class Settings(BaseSettings):
     reallocation_max_rounds: int = 2
     reallocation_deadline_pct: float = 0.5
     reallocation_reserve_pct: float = 0.10
+    # Degradation Ladder (ticket 08). A cached plan stays usable for N intervals, the last
+    # valid price for the Safe Rule for M; N clean intervals take the ladder back to L0.
+    # The feed's circuit breaker opens after K failures and probes after a cooldown.
+    ladder_cached_plan_intervals: int = 2
+    ladder_safe_rule_max_age_intervals: int = 8
+    ladder_recover_after_clean: int = 2
+    feed_breaker_failures: int = 3
+    feed_breaker_cooldown_intervals: int = 2
+    feed_outlier_z: float = 100.0
+    feed_outlier_mad_floor_usd: float = 50.0
 
     # Chaos controller (ticket 05). The Docker socket mount is for local demos only.
     chaos_controller_url: str = "http://localhost:8001"
@@ -115,6 +128,21 @@ class Settings(BaseSettings):
             max_rounds=self.reallocation_max_rounds,
             deadline_pct=self.reallocation_deadline_pct,
             reserve_pct=self.reallocation_reserve_pct,
+        )
+
+    def ladder_config(self) -> LadderConfig:
+        return LadderConfig(
+            cached_plan_intervals=self.ladder_cached_plan_intervals,
+            safe_rule_max_age_intervals=self.ladder_safe_rule_max_age_intervals,
+            recover_after_clean=self.ladder_recover_after_clean,
+            breaker=BreakerConfig(
+                failure_threshold=self.feed_breaker_failures,
+                cooldown_intervals=self.feed_breaker_cooldown_intervals,
+            ),
+            validator=ValidatorConfig(
+                outlier_z=self.feed_outlier_z,
+                outlier_mad_floor_usd=self.feed_outlier_mad_floor_usd,
+            ),
         )
 
     def fleet_config(self) -> FleetConfig:

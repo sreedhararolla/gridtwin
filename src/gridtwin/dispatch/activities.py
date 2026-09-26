@@ -6,7 +6,9 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
+from gridtwin.chaos.models import FEED_OUTLIER_PRICE_USD
 from gridtwin.dispatch.publish import ResultPublisher
 from gridtwin.dispatch.workflows import ShardDispatchResult
 from gridtwin.fleet.fleet import build_fleet, fleet_state_from_telemetry
@@ -16,13 +18,19 @@ from gridtwin.ledger.repo import LedgerRepo
 from gridtwin.marketdata.prices import load_day_prices
 from gridtwin.planner.models import FleetPlan, FleetState
 from gridtwin.planner.naive import naive_strategy
-from gridtwin.replay.feed import validate_snapshot
+from gridtwin.replay.feed import FeedReading
 from gridtwin.replay.models import MarketSnapshot
 from gridtwin.telemetry.repo import TelemetryRepo
 from gridtwin.transport.base import Transport
 
 INTERVAL_MINUTES = 15
 HEARTBEAT_EVERY_SECONDS = 0.5
+# (run_id, interval_start) -> the feed Chaos Scenarios active for that run right now.
+FeedFaults = Callable[[str, datetime], set[str]]
+
+
+def no_feed_faults(_run_id: str, _interval_start: datetime) -> set[str]:
+    return set()
 
 
 async def _heartbeat_until_cancelled(detail: str) -> None:
@@ -42,21 +50,25 @@ class DispatchActivities:
         transport: Transport,
         publisher: ResultPublisher,
         on_fleet_state: Callable[[datetime, datetime], None] | None = None,
+        feed_faults: FeedFaults = no_feed_faults,
     ) -> None:
         """`on_fleet_state(interval_start, now)` runs just before Fleet State is read. The
         in-process Scenario Runner uses it as its heartbeat loop and chaos schedule; in
-        compose the simulators heartbeat on their own and it is None."""
+        compose the simulators heartbeat on their own and it is None. `feed_faults` says
+        which feed Chaos Scenarios are on: the chaos event log in compose, the Chaos
+        Script in-process."""
         self._repo = repo
         self._telemetry = telemetry
         self._transport = transport
         self._publisher = publisher
         self._on_fleet_state = on_fleet_state
+        self._feed_faults = feed_faults
 
     def all(self) -> list:
         return [
             self.seed_fleet,
             self.list_interval_starts,
-            self.get_market_snapshot,
+            self.read_feed,
             self.get_fleet_state,
             self.build_plan,
             self.dispatch_shard,
@@ -97,12 +109,32 @@ class DispatchActivities:
         return [interval_start for interval_start, _price in rows]
 
     @activity.defn
-    async def get_market_snapshot(
-        self, interval_start: datetime, settlement_point: str, day: date | None, fixture_path: str
-    ) -> MarketSnapshot:
+    async def read_feed(
+        self,
+        run_id: str,
+        interval_start: datetime,
+        settlement_point: str,
+        day: date | None,
+        fixture_path: str,
+    ) -> FeedReading:
+        """The raw replay-feed reading. Validation, the circuit breaker and the ladder run
+        in the workflow; a feed outage fails the activity outright (no retries: the
+        breaker, not Temporal, decides when to try the feed again)."""
+        faults = await asyncio.to_thread(self._feed_faults, run_id, interval_start)
+        if "feed-outage" in faults:
+            raise ApplicationError(
+                "ERCOT feed unavailable (feed-outage chaos)", type="FeedError", non_retryable=True
+            )
         rows = await asyncio.to_thread(load_day_prices, settlement_point, day, fixture_path)
-        prices = dict(rows)
-        return validate_snapshot(interval_start, settlement_point, prices.get(interval_start))
+        price = dict(rows).get(interval_start)
+        if "feed-outlier" in faults:
+            price = FEED_OUTLIER_PRICE_USD
+        return FeedReading(
+            interval_start=interval_start,
+            observed_interval_start=interval_start if price is not None else None,
+            settlement_point=settlement_point,
+            raw_price=price,
+        )
 
     @activity.defn
     async def get_fleet_state(

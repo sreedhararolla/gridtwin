@@ -18,7 +18,7 @@ RESULT_COLUMNS = (
     "budget_ms, online_devices, shard_count, soc_p10_pct, soc_p50_pct, soc_p90_pct, "
     "duplicate_deliveries, duplicate_effects, retried_dispatches, planned_achievable_mw, "
     "stale_devices, unresponsive_devices, reallocation_rounds, reallocated_mw, "
-    "reallocated_devices"
+    "reallocated_devices, feed_status, feed_detail"
 )
 RESULT_FIELDS = [c.strip() for c in RESULT_COLUMNS.split(",")]
 

@@ -91,3 +91,7 @@ class IntervalResult(BaseModel, frozen=True):
     reallocation_rounds: int = 0  # seq+1 rounds issued (bounded by config)
     reallocated_mw: float = 0.0  # Shortfall re-issued to Devices with Headroom
     reallocated_devices: int = 0  # distinct Devices sent a seq+1 Command
+    # Degradation Ladder (ticket 08): `level` is the rung this interval dispatched on.
+    # feed_status: ok | rejected (validator) | outage (feed raised) | circuit-open.
+    feed_status: str = "ok"
+    feed_detail: str = ""  # why the snapshot was not used

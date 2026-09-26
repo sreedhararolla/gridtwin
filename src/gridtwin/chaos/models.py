@@ -5,13 +5,25 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# Ticket 05 ships worker-kill, 06 duplicate-commands, 07 partition and telemetry-delay;
-# 08 adds feed faults.
-ScenarioName = Literal["worker-kill", "duplicate-commands", "partition", "telemetry-delay"]
+# Ticket 05 ships worker-kill, 06 duplicate-commands, 07 partition and telemetry-delay,
+# 08 the feed faults.
+ScenarioName = Literal[
+    "worker-kill",
+    "duplicate-commands",
+    "partition",
+    "telemetry-delay",
+    "feed-outage",
+    "feed-outlier",
+]
 # Scenarios the chaos controller broadcasts to every simulator at once; this is their
 # event-log target.
 SIMULATOR_SCENARIOS = ("duplicate-commands", "partition", "telemetry-delay")
 SIMULATORS_TARGET = "simulators"
+# Feed faults live in the chaos event log itself: while one is applied for a run, the
+# worker's feed read raises (outage) or returns the outlier price (outlier).
+FEED_SCENARIOS = ("feed-outage", "feed-outlier")
+FEED_TARGET = "ercot-feed"
+FEED_OUTLIER_PRICE_USD = 9999.0
 ChaosAction = Literal["apply", "clear"]
 
 

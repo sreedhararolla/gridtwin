@@ -1,0 +1,16 @@
+# Inject a $9,999/MWh price into the replay feed for one interval of a quiet afternoon on
+# the fixture day. The validator rejects the snapshot and the interval runs on the cached
+# plan (L1): nothing is dispatched on the bad price, so the fleet stays idle.
+# Run: make chaos SCENARIO=feed-outlier (about 2 minutes at 60x)
+name: feed-outlier
+description: A $9,999 price is rejected; no Command is issued on it.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2025-12-10.csv
+window:
+  from_interval: 60 # 3:00 PM CT, prices $26-33/MWh: the fleet idles
+  intervals: 8
+steps:
+  - at_interval: 3
+    apply: feed-outlier
+    for_intervals: 1
+    at_offset_s: 5 # compose: early in the wait before interval 3's decision

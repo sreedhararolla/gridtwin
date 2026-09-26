@@ -1,0 +1,17 @@
+# Break the ERCOT feed for 6 intervals through the fixture day's evening spike. The ladder
+# steps down L0 -> L1 (cached plan) -> L2 (safe rule on the last valid price) as the
+# cached plan runs out; the circuit breaker opens after 3 failures and probes the feed
+# after a cooldown. Once the feed is back, 2 clean intervals take the ladder back to L0.
+# Run: make chaos SCENARIO=feed-outage (about 4 minutes at 60x)
+name: feed-outage
+description: The feed raises for 6 intervals; the ladder steps down, then recovers to L0.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2025-12-10.csv
+window:
+  from_interval: 68 # 5:00 PM CT, the run-up to the evening peak
+  intervals: 16
+steps:
+  - at_interval: 5 # 6:15 PM CT
+    apply: feed-outage
+    for_intervals: 6
+    at_offset_s: 5

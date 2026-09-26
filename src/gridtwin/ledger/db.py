@@ -78,7 +78,9 @@ ALTER TABLE interval_results
     ADD COLUMN IF NOT EXISTS unresponsive_devices INT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS reallocation_rounds INT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS reallocated_mw DOUBLE PRECISION NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS reallocated_devices INT NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS reallocated_devices INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS feed_status TEXT NOT NULL DEFAULT 'ok',
+    ADD COLUMN IF NOT EXISTS feed_detail TEXT NOT NULL DEFAULT '';
 
 -- Telemetry: the latest Heartbeat per Device per run, batched in by the ingester.
 CREATE TABLE IF NOT EXISTS device_telemetry (
