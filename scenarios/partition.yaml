@@ -14,3 +14,4 @@ steps:
     apply: partition
     pct: 0.2
     for_intervals: 6
+    at_offset_s: 12 # compose: ~2 s before the 6:45 decision, while they still look online

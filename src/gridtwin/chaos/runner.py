@@ -82,6 +82,8 @@ async def run_chaos_script(script: ChaosScript) -> ChaosRunOutcome:
         for step in sorted(script.steps, key=lambda s: s.at_interval):
             # `at_interval` results recorded => the next dispatch in flight is interval k.
             await _wait_for_results(api, run_id, step.at_interval)
+            if step.at_offset_s:
+                await asyncio.sleep(step.at_offset_s)
             res = await api.post(
                 "/chaos/apply",
                 json={
@@ -89,6 +91,8 @@ async def run_chaos_script(script: ChaosScript) -> ChaosRunOutcome:
                     "run_id": run_id,
                     "target": step.target,
                     "duration_s": step.for_intervals * wall_s_per_interval,
+                    "pct": step.pct,
+                    "delay_s": step.delay_s,
                 },
             )
             res.raise_for_status()

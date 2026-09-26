@@ -19,6 +19,8 @@ from gridtwin.settings import settings
 from gridtwin.telemetry.staleness import heartbeat_period_seconds
 from gridtwin.transport.nats_transport import (
     CHAOS_DUPLICATES_SUBJECT,
+    CHAOS_PARTITION_SUBJECT,
+    CHAOS_TELEMETRY_DELAY_SUBJECT,
     reset_subject,
     shard_subject,
     telemetry_subject,
@@ -95,6 +97,29 @@ async def main() -> None:
         log.info(json.dumps({"event": "chaos_duplicates", "active": active}))
 
     await nc.subscribe(CHAOS_DUPLICATES_SUBJECT, cb=on_duplicates)
+
+    async def on_partition(msg) -> None:
+        pct = float(json.loads(msg.data.decode()).get("pct", 0.0))
+        dark = 0
+        for shard in shards.values():
+            shard.set_partition(pct)
+            dark += len(shard.partitioned)
+        log.info(json.dumps({"event": "chaos_partition", "pct": pct, "devices": dark}))
+
+    async def on_telemetry_delay(msg) -> None:
+        body = json.loads(msg.data.decode())
+        delay_s = float(body.get("delay_s", 0.0))
+        pct = float(body.get("pct", 1.0))
+        delayed = 0
+        for shard in shards.values():
+            shard.set_telemetry_delay(delay_s, pct)
+            delayed += len(shard.delayed)
+        log.info(
+            json.dumps({"event": "chaos_telemetry_delay", "delay_s": delay_s, "devices": delayed})
+        )
+
+    await nc.subscribe(CHAOS_PARTITION_SUBJECT, cb=on_partition)
+    await nc.subscribe(CHAOS_TELEMETRY_DELAY_SUBJECT, cb=on_telemetry_delay)
 
     try:
         await asyncio.gather(liveness_loop(instance_id), telemetry_loop(nc, shards))

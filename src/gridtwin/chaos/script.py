@@ -17,6 +17,10 @@ class ChaosStep(BaseModel, frozen=True):
     target: str | None = None  # None = the scenario picks (worker-kill: the busy worker)
     pct: float | None = Field(default=None, ge=0.0, le=1.0)  # partition / telemetry-delay
     delay_s: float | None = Field(default=None, gt=0.0)  # telemetry-delay
+    # Compose only: wall seconds to wait after interval k-1's result before applying. Near
+    # the interval budget (15 s at 60x) the fault lands just before interval k's decision,
+    # while its Devices still look online. In-process steps always land there.
+    at_offset_s: float = Field(default=0.0, ge=0.0)
 
 
 class ScenarioWindow(BaseModel, frozen=True):
