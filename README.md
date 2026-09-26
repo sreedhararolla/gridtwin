@@ -137,9 +137,15 @@ shipped; see [Status](#status).
 
 ## Status
 
-[`docs/PROGRESS.md`](docs/PROGRESS.md) tracks every ticket. Everything except these is done:
+[`docs/PROGRESS.md`](docs/PROGRESS.md) tracks every ticket. Everything except this is done:
 - **12 Scale + benchmarks** (P2): not shipped, so there is no `make bench` or BENCHMARKS.md.
-- **14 Storm mode** (stretch): not shipped.
+
+**14 Storm mode** (stretch) shipped. Tick "Storm mode" on the Live tab (or set
+`STORM_MODE=true`, or run `python -m gridtwin.replay.cli --storm`). The Reserve Floor then
+rises to 60% up to 2 h before a grid-tight interval (Risk Curve p(spike) ≥ 25%) or during
+heat or cold. Devices enforce the floor, the SoC chart draws it, and a Member Card explains
+it. `make backtest` reports `lp_storm`, and the Insights tab's trade-off panel shows $
+forgone vs backup hours gained ([ADR-017](docs/DECISIONS.md)).
 
 ## What's running
 

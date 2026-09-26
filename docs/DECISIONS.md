@@ -93,3 +93,16 @@ Ticket 11.
 **Forecast error vs price is deferred.** It needs net-load forecast history (`load_forecast_vintages`, credential-gated, plus `load_actual`). Neither is cached. The report carries `forecast_error.available=false` with the reason, and the tab shows "needs ERCOT keys", as the ticket allows. The scatter itself is not built yet, and no test covers it.
 
 **Regime comparison.** Concentration is computed per `regime`. Pre-RTC+B rows appear as a second row only when they are cached. The heatmap and headline are post-RTC+B only.
+
+## ADR-017: Storm mode: a hard dynamic floor, the decision in an activity, outage capacity absent
+Ticket 14 (stretch).
+
+**Signals.** Grid tightness is the stored Risk Curve's p(spike) (≥ `STORM_RISK_THRESHOLD`, default 25%) within `STORM_LEAD_INTERVALS` (8 = 2 h). Severe weather is the latest observed hourly temperature (≥ 35 °C or ≤ −5 °C). The ticket also names outage capacity. The decision supports it (`outage_mw`), but NP3-233-CD is not cached (ADR-015's missing inputs), so that signal is always None today.
+
+**One zone.** The ticket says "per-zone". A Replay Run has one Settlement Point, and every Device in it gets the same floor. A multi-zone fleet would key the decision by zone. We don't model that.
+
+**Hard floor, not a soft holdback.** The storm floor is an energy lower bound in the LP (`floor_mwh_by_interval`). It is clipped to what the fleet can reach by charging at full power from where it is, so the LP always stays feasible. It is also a Device-level floor: each Command carries `reserve_floor_pct`, and the Device checks headroom and floor violations against it. `reserve_violations == 0` in the Scenario Report therefore means no Device was discharged below the dynamic floor. A fleet that is below the floor when it rises is not in violation. It is simply not discharged, and it charges up.
+
+**Decision in an activity.** `decide_reserve` and `member_card` are pure (`storm/reserve.py`, Seam B). They run inside the `decide_reserve` activity, not in the workflow, because the Member Card's Central-time wording ("tonight", "by 6:30 PM") needs tz data, and the Temporal sandbox proxies `ZoneInfo`. If the activity fails, the workflow falls back to the base floor.
+
+**Backtest.** `lp_storm` is `lp` on the dynamic floor. It re-plans hourly and whenever the floor changes, and it is identical to `lp` on days whose floor never rises. The trade-off panel reads `BacktestReport.storm`, built from the same DayResults and schedules. "$ forgone" is lp − lp_storm value. "Backup hours" is the lowest per-home SoC over the raised intervals × 39.2 kWh ÷ `STORM_HOME_BACKUP_LOAD_KW` (1.5 kW, an assumed essential load). The Base Core rating is unchanged. On the cached window, the floor rose on 62 days and cost $99,293 against lp. Heat (≥ 35 °C) was the first reason on 35 of those days and grid tightness on 27, so the heat threshold is the main tuning knob. The most expensive day, 2026-04-24, rose at 6:30 PM CT on a 52% risk "right now": the Risk Curve did not see that evening two hours ahead.

@@ -698,6 +698,17 @@ export interface components {
              * @default []
              */
             plan_mw: number[];
+            /**
+             * Reserve Floor Pct
+             * @default 0
+             */
+            reserve_floor_pct: number;
+            /**
+             * Reserve Reasons
+             * @default []
+             */
+            reserve_reasons: components["schemas"]["ReserveReason"][];
+            member_card?: components["schemas"]["MemberCard"] | null;
         };
         /** LatestRun */
         LatestRun: {
@@ -911,6 +922,8 @@ export interface components {
             settlement_point?: string | null;
             /** Strategy */
             strategy?: ("naive" | "lp" | "lp_risk") | null;
+            /** Storm */
+            storm?: boolean | null;
         };
         /** StartedRun */
         StartedRun: {

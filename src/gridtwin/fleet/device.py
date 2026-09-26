@@ -102,9 +102,14 @@ def apply_command(
     (a lower seq). A Reallocation's `seq+1` Setpoint is the Device's new *total* for the
     interval, so it delivers only the increment, and the interval's total power stays within
     `max_power_kw` (the energy cap already reflects the SoC the earlier seq used).
+
+    A Command carrying a Dynamic Reserve Floor (Storm mode) sets the Device's Reserve Floor
+    first, so its headroom and its floor-violation check both use the floor in force.
     """
     if faulted:
         return state, ignored_ack(state, command, "failed")
+    if command.reserve_floor_pct is not None:
+        state = state.model_copy(update={"reserve_floor_pct": command.reserve_floor_pct})
 
     discharge_mw, charge_mw = headroom_mw(state)
     setpoint_mw = command.setpoint_mw * max(response_factor, 0.0)

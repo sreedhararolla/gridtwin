@@ -29,6 +29,7 @@ class StartRunRequest(BaseModel):
     day: date | None = None  # a cached day (Central-time trading day); None = fixture day
     settlement_point: str | None = None
     strategy: Literal["naive", "lp", "lp_risk"] | None = None  # None = the STRATEGY setting
+    storm: bool | None = None  # Storm mode's Dynamic Reserve Floor; None = the STORM_MODE setting
 
 
 class StartedRun(BaseModel):
@@ -40,7 +41,11 @@ async def start_run(request: StartRunRequest) -> StartedRun:
     """The Live tab's day picker: replay any cached day with the full fleet."""
     try:
         run_id = await start_replay_run(
-            await connect_temporal(), request.day, request.settlement_point, request.strategy
+            await connect_temporal(),
+            request.day,
+            request.settlement_point,
+            request.strategy,
+            request.storm,
         )
     except DayNotCached as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

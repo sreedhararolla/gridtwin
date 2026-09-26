@@ -49,4 +49,9 @@ Use these nouns in code, commits, UI labels and the video. If a new concept appe
 | **Scenario Report** | SLO summary of a run. The system-level test seam. |
 | **Opportunity** | Fleet MW × max(0, RT SPP − that trading day's median RT SPP) × 0.25 h: an interval's discharge value over a typical price that day. |
 | **Value Concentration** | Share of a window's Opportunity in its top 1% / 5% of intervals and top 10 days. |
+| **Storm Mode** | Optional: a Reserve Floor that rises before grid-tight or severe-weather spells (`lp_storm` in the backtest). |
+| **Dynamic Reserve Floor** | The Reserve Floor Storm Mode sets per interval: the storm floor (default 60%) from `lead` intervals before a tight interval, else the base floor. Commands carry it; Devices enforce it. |
+| **Reserve Reason** | A signal over its threshold (grid tight: p(spike); outages: MW; heat/cold: °C) that raised the floor. |
+| **Member Card** | "Why is your battery at 60% tonight?": template text built only from Reserve Reasons and the floor. |
+| **Storm Trade-off** | $ forgone (lp − lp_storm value) vs backup hours gained per home over the raised intervals, from the backtest. |
 | **Downtime Cost** | Expected $ lost per minute of dispatch outage = Opportunity ÷ 15, by hour of day (CT) × month, mean and p95. |

@@ -8,6 +8,7 @@ import { DependencyPanel } from "@/components/DependencyPanel";
 import { FleetReadouts } from "@/components/FleetReadouts";
 import { LedgerSummary } from "@/components/LedgerSummary";
 import { LiveChart } from "@/components/LiveChart";
+import { MemberCard } from "@/components/MemberCard";
 import { ReplayPicker } from "@/components/ReplayPicker";
 import { RiskChart } from "@/components/RiskChart";
 import { SocBandChart } from "@/components/SocBandChart";
@@ -93,8 +94,16 @@ export function LiveView() {
             <LiveChart results={results} chaosEvents={events} />
             <h3 className="text-sm font-medium text-slate-400">Risk Curve (scarcity risk)</h3>
             <RiskChart results={results} />
-            <h3 className="text-sm font-medium text-slate-400">Fleet SoC (p10 / median / p90)</h3>
+            <h3 className="text-sm font-medium text-slate-400">
+              Fleet SoC (p10 / median / p90) and Reserve Floor
+            </h3>
             <SocBandChart results={results} />
+            {latest?.member_card ? (
+              <MemberCard
+                card={latest.member_card}
+                caption={`Storm mode · Reserve Floor ${latest.reserve_floor_pct?.toFixed(0)}% now`}
+              />
+            ) : null}
           </>
         ) : (
           <p className="text-sm text-slate-500">

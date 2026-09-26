@@ -51,6 +51,9 @@ class Command(BaseModel, frozen=True):
     seq: int
     setpoint_mw: float  # +MW = discharge, -MW = charge
     expires_at: datetime
+    # Storm mode: the Dynamic Reserve Floor (0-1) the Device holds from this Command on.
+    # None = keep its own Reserve Floor.
+    reserve_floor_pct: float | None = None
 
 
 # What a Device did with a Command. `applied` acted on it; `expired` / `superseded` ignored

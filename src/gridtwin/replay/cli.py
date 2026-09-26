@@ -20,7 +20,11 @@ log = logging.getLogger("demo")
 
 
 def build_run_input(
-    run_id: str, day: date | None, settlement_point: str, strategy: str | None = None
+    run_id: str,
+    day: date | None,
+    settlement_point: str,
+    strategy: str | None = None,
+    storm: bool | None = None,
 ) -> ReplayRunInput:
     return ReplayRunInput(
         run_id=run_id,
@@ -37,6 +41,7 @@ def build_run_input(
         ladder=settings.ladder_config(),
         strategy=strategy or settings.strategy,
         lp=settings.lp_config(),
+        storm=settings.storm_config(storm),
     )
 
 
@@ -53,6 +58,7 @@ async def start_replay_run(
     day: date | None,
     settlement_point: str | None = None,
     strategy: str | None = None,
+    storm: bool | None = None,
 ) -> str:
     point = settlement_point or settings.settlement_point
     # Fail fast (DayNotCached) before starting a workflow that could never load its day.
@@ -61,7 +67,7 @@ async def start_replay_run(
     run_id = f"demo-{suffix}-{uuid.uuid4().hex[:6]}"
     await client.start_workflow(
         ReplayRunWorkflow.run,
-        build_run_input(run_id, day, point, strategy),
+        build_run_input(run_id, day, point, strategy, storm),
         id=f"replay:{run_id}",
         task_queue=settings.task_queue,
         task_timeout=WORKFLOW_TASK_TIMEOUT,
@@ -74,10 +80,16 @@ async def main() -> None:
     parser.add_argument("--day", type=date.fromisoformat, default=None)
     parser.add_argument("--settlement-point", default=settings.settlement_point)
     parser.add_argument("--strategy", choices=["naive", "lp", "lp_risk"], default=settings.strategy)
+    parser.add_argument(
+        "--storm",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Storm mode's Dynamic Reserve Floor (default: STORM_MODE)",
+    )
     args = parser.parse_args()
 
     run_id = await start_replay_run(
-        await connect_temporal(), args.day, args.settlement_point, args.strategy
+        await connect_temporal(), args.day, args.settlement_point, args.strategy, args.storm
     )
     log.info(
         "started run %s: %s at %s, %s strategy, %d devices in %d shards, %sx",

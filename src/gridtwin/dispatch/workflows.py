@@ -25,7 +25,7 @@ from gridtwin.dispatch.ladder import (
     step,
 )
 from gridtwin.fleet.disaggregate import disaggregate
-from gridtwin.fleet.fleet import group_by_shard, soc_band
+from gridtwin.fleet.fleet import group_by_shard, soc_band, with_reserve_floor
 from gridtwin.fleet.models import FleetConfig
 from gridtwin.fleet.reallocate import (
     ReallocationConfig,
@@ -40,6 +40,12 @@ from gridtwin.planner.models import FleetPlan, FleetState, LpConfig
 from gridtwin.replay.breaker import allow, record_failure, record_success
 from gridtwin.replay.feed import FeedReading, remember, validate_snapshot
 from gridtwin.replay.models import FeedError, MarketSnapshot
+from gridtwin.storm.reserve import (
+    ReserveOutcome,
+    StormConfig,
+    StormSignals,
+    decide_reserve,
+)
 
 # Worker-kill resilience (ticket 05): a short activity lost with its worker is retried on
 # the surviving worker after ACTIVITY_TIMEOUT; a lost `dispatch_shard` after
@@ -90,6 +96,9 @@ class MarketIntervalInput(BaseModel, frozen=True):
     guard: FeedGuard = FeedGuard()  # the ladder state the previous interval left
     strategy: str = "naive"
     lp: LpConfig = LpConfig()
+    storm: StormConfig = StormConfig()
+    base_reserve_floor_pct: float = 0.20  # the fleet's Reserve Floor
+    device_energy_kwh: float = 39.2  # for the Member Card's kWh and backup hours
 
 
 class ReplayRunInput(BaseModel):
@@ -110,6 +119,7 @@ class ReplayRunInput(BaseModel):
     guard: FeedGuard = FeedGuard()  # carried across continue-as-new
     strategy: str = "naive"  # naive | lp | lp_risk
     lp: LpConfig = LpConfig()
+    storm: StormConfig = StormConfig()  # Storm mode's Dynamic Reserve Floor (off by default)
 
 
 class IntervalOutcome(BaseModel, frozen=True):
@@ -142,6 +152,13 @@ class MarketIntervalWorkflow:
             retry_policy=RETRY_POLICY,
             result_type=FleetState,
         )
+        storm = await self._reserve(input)
+        reserve = storm.decision if storm else None
+        if reserve is not None:
+            # Storm mode: every Device (and the planner) works to the Dynamic Reserve Floor.
+            fleet_state = with_reserve_floor(
+                fleet_state, reserve.floor_pct, reserve.floor_by_interval_pct
+            )
         soc_p10, soc_p50, soc_p90 = soc_band(fleet_state.devices)
 
         target_mw = 0.0
@@ -263,6 +280,10 @@ class MarketIntervalWorkflow:
             strategy=plan.strategy if plan else "",
             forecast_source=plan.forecast_source if plan else "",
             plan_mw=plan.horizon_mw if plan else [],
+            reserve_floor_pct=100.0
+            * (reserve.floor_pct if reserve else input.base_reserve_floor_pct),
+            reserve_reasons=reserve.reasons if reserve else [],
+            member_card=storm.card if storm else None,
         )
         await workflow.execute_activity(
             "record_interval_result",
@@ -321,6 +342,40 @@ class MarketIntervalWorkflow:
         )
         return snapshot, guard, status, detail
 
+    async def _reserve(self, input: MarketIntervalInput) -> ReserveOutcome | None:
+        """Storm mode's Dynamic Reserve Floor for this interval and its Member Card (None =
+        Storm mode off). If the signals cannot be read, the floor stays at its base."""
+        if not input.storm.enabled:
+            return None
+        try:
+            outcome = await workflow.execute_activity(
+                "decide_reserve",
+                args=[
+                    input.settlement_point,
+                    input.interval_start,
+                    input.base_reserve_floor_pct,
+                    input.device_energy_kwh,
+                    input.storm,
+                ],
+                start_to_close_timeout=ACTIVITY_TIMEOUT,
+                retry_policy=RETRY_POLICY,
+                result_type=ReserveOutcome,
+            )
+        except ActivityError:
+            outcome = ReserveOutcome(
+                decision=decide_reserve(StormSignals(), input.base_reserve_floor_pct, input.storm)
+            )
+        reserve = outcome.decision
+        if reserve.raised:
+            workflow.logger.info(
+                "reserve floor %.0f%% at %s (%s)",
+                reserve.floor_pct * 100,
+                input.interval_start.isoformat(),
+                ", ".join(r.kind for r in reserve.reasons),
+                extra={"run_id": input.run_id, "interval_start": input.interval_start.isoformat()},
+            )
+        return outcome
+
     async def _dispatch(
         self,
         input: MarketIntervalInput,
@@ -328,8 +383,14 @@ class MarketIntervalWorkflow:
         fleet_state: FleetState,
         seq: int,
     ) -> list[ShardDispatchResult]:
-        """One Command batch per Shard, all concurrently."""
+        """One Command batch per Shard, all concurrently. In Storm mode every Command carries
+        the Dynamic Reserve Floor, so the Devices enforce it too."""
         batches = group_by_shard(setpoints, fleet_state.devices)
+        floor = (
+            fleet_state.devices[0].reserve_floor_pct
+            if input.storm.enabled and fleet_state.devices
+            else None
+        )
         return list(
             await asyncio.gather(
                 *(
@@ -342,6 +403,7 @@ class MarketIntervalWorkflow:
                             batch,
                             seq,
                             input.dispatch_timeout_seconds,
+                            floor,
                         ],
                         start_to_close_timeout=DISPATCH_TIMEOUT,
                         heartbeat_timeout=DISPATCH_HEARTBEAT_TIMEOUT,
@@ -415,6 +477,9 @@ class ReplayRunWorkflow:
                     guard=guard,
                     strategy=input.strategy,
                     lp=input.lp,
+                    storm=input.storm,
+                    base_reserve_floor_pct=input.fleet.reserve_floor_pct,
+                    device_energy_kwh=input.fleet.energy_kwh,
                 ),
                 id=f"interval:{input.run_id}:{interval_start.isoformat()}",
                 # A second start of the same interval id is rejected outright, not just

@@ -16,12 +16,15 @@ import { formatCentralTime } from "@/lib/format";
 
 // SoC has its own colour (tailwind `soc`); never red, which is reserved for violations.
 const SOC_COLOR = "#34d399";
+// The Reserve Floor (dynamic in Storm mode): a neutral dashed step, not red (a floor is a
+// limit, not a violation).
+const FLOOR_COLOR = "#cbd5e1";
 
 function formatTooltipValue(value: number | number[], name: string): [string, string] {
   if (Array.isArray(value)) {
     return [`${value[0].toFixed(1)}% – ${value[1].toFixed(1)}%`, "SoC p10–p90"];
   }
-  return [`${value.toFixed(1)}%`, name === "median" ? "SoC median" : name];
+  return [`${value.toFixed(1)}%`, name === "median" ? "SoC median" : String(name)];
 }
 
 export function SocBandChart({ results }: { results: IntervalResult[] }) {
@@ -29,6 +32,7 @@ export function SocBandChart({ results }: { results: IntervalResult[] }) {
     time: formatCentralTime(r.interval_start),
     band: [r.soc_p10_pct ?? 0, r.soc_p90_pct ?? 0],
     median: r.soc_p50_pct ?? 0,
+    floor: r.reserve_floor_pct ? r.reserve_floor_pct : null,
   }));
 
   return (
@@ -61,6 +65,15 @@ export function SocBandChart({ results }: { results: IntervalResult[] }) {
           dataKey="median"
           name="median"
           stroke={SOC_COLOR}
+          dot={false}
+          isAnimationActive={false}
+        />
+        <Line
+          type="stepAfter"
+          dataKey="floor"
+          name="reserve floor"
+          stroke={FLOOR_COLOR}
+          strokeDasharray="4 3"
           dot={false}
           isAnimationActive={false}
         />

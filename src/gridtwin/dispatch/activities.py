@@ -23,6 +23,9 @@ from gridtwin.planner.naive import naive_strategy
 from gridtwin.replay.feed import FeedReading
 from gridtwin.replay.models import MarketSnapshot
 from gridtwin.risk.store import risk_curve
+from gridtwin.settings import settings
+from gridtwin.storm.reserve import ReserveOutcome, StormConfig, StormSignals, reserve_outcome
+from gridtwin.storm.signals import storm_signals
 from gridtwin.telemetry.repo import TelemetryRepo
 from gridtwin.transport.base import Transport
 
@@ -34,6 +37,14 @@ FeedFaults = Callable[[str, datetime], set[str]]
 
 def no_feed_faults(_run_id: str, _interval_start: datetime) -> set[str]:
     return set()
+
+
+# (settlement_point, interval_start) -> Storm mode's signals at that decision time.
+StormSignalsSource = Callable[[str, datetime], StormSignals]
+
+
+def cached_storm_signals(settlement_point: str, interval_start: datetime) -> StormSignals:
+    return storm_signals(settlement_point, interval_start, settings.risk_weather_city)
 
 
 async def _heartbeat_until_cancelled(detail: str) -> None:
@@ -54,6 +65,7 @@ class DispatchActivities:
         publisher: ResultPublisher,
         on_fleet_state: Callable[[datetime, datetime], None] | None = None,
         feed_faults: FeedFaults = no_feed_faults,
+        storm_signals: StormSignalsSource | None = None,
     ) -> None:
         """`on_fleet_state(interval_start, now)` runs just before Fleet State is read. The
         in-process Scenario Runner uses it as its heartbeat loop and chaos schedule; in
@@ -66,6 +78,7 @@ class DispatchActivities:
         self._publisher = publisher
         self._on_fleet_state = on_fleet_state
         self._feed_faults = feed_faults
+        self._storm_signals = storm_signals or cached_storm_signals
 
     def all(self) -> list:
         return [
@@ -73,6 +86,7 @@ class DispatchActivities:
             self.list_interval_starts,
             self.read_feed,
             self.get_fleet_state,
+            self.decide_reserve,
             self.build_plan,
             self.dispatch_shard,
             self.record_interval_result,
@@ -151,6 +165,22 @@ class DispatchActivities:
         return fleet_state_from_telemetry(heartbeats, now, stale_after_seconds)
 
     @activity.defn
+    async def decide_reserve(
+        self,
+        settlement_point: str,
+        interval_start: datetime,
+        base_floor_pct: float,
+        device_energy_kwh: float,
+        storm: StormConfig,
+    ) -> ReserveOutcome:
+        """Storm mode's Dynamic Reserve Floor at this decision time, from the stored Risk
+        Curve and the latest observed temperature (the Scenario Runner injects its own
+        signals). Reading the signals is IO; the decision and the Member Card are pure, but
+        the card's Central-time wording needs tz data the workflow sandbox cannot use."""
+        signals = await asyncio.to_thread(self._storm_signals, settlement_point, interval_start)
+        return reserve_outcome(signals, base_floor_pct, interval_start, device_energy_kwh, storm)
+
+    @activity.defn
     async def build_plan(
         self,
         fleet_state: FleetState,
@@ -201,6 +231,7 @@ class DispatchActivities:
         setpoints: dict[str, float],
         seq: int,
         timeout_seconds: float,
+        reserve_floor_pct: float | None = None,
     ) -> ShardDispatchResult:
         # Keys are a pure function of the inputs, so a retry after a partial send re-sends
         # the same keys and the Devices dedupe them (exactly-once effects).
@@ -214,6 +245,7 @@ class DispatchActivities:
                 seq=seq,
                 setpoint_mw=setpoint_mw,
                 expires_at=expires_at,
+                reserve_floor_pct=reserve_floor_pct,
             )
             for device_id, setpoint_mw in setpoints.items()
         ]

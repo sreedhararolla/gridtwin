@@ -54,6 +54,22 @@ def fleet_state_from_telemetry(
     devices = [
         hb.state for hb in heartbeats if hb.healthy and not is_stale(hb, now, stale_after_seconds)
     ]
+    return fleet_state_of(devices, stale_devices=len(heartbeats) - len(devices))
+
+
+def with_reserve_floor(
+    fleet_state: FleetState, floor_pct: float, floor_by_interval_pct: list[float] | None = None
+) -> FleetState:
+    """Fleet State re-rated at a Dynamic Reserve Floor (Storm mode): every Device holds
+    `floor_pct`, so headroom, the disaggregator and Reallocation all respect it, and the
+    planner sees the floor for each upcoming interval (`floor_by_interval_pct`)."""
+    devices = [d.model_copy(update={"reserve_floor_pct": floor_pct}) for d in fleet_state.devices]
+    return fleet_state_of(devices, fleet_state.stale_devices).model_copy(
+        update={"reserve_floor_by_interval_pct": list(floor_by_interval_pct or [])}
+    )
+
+
+def fleet_state_of(devices: list[DeviceState], stale_devices: int = 0) -> FleetState:
     discharge_mw, charge_mw = aggregate_headroom(devices)
     energy_mwh = sum(
         max(d.soc_pct - d.reserve_floor_pct, 0.0) * d.energy_kwh / 1000.0 for d in devices
@@ -64,7 +80,7 @@ def fleet_state_from_telemetry(
         charge_headroom_mw=charge_mw,
         energy_above_floor_mwh=energy_mwh,
         devices=devices,
-        stale_devices=len(heartbeats) - len(devices),
+        stale_devices=stale_devices,
         capacity_mwh=capacity_mwh,
         energy_mwh=sum(d.soc_pct * d.energy_kwh for d in devices) / 1000.0,
         floor_mwh=sum(d.reserve_floor_pct * d.energy_kwh for d in devices) / 1000.0,

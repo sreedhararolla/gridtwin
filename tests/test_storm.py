@@ -4,6 +4,10 @@ panel's numbers are the backtest's own lp vs lp_storm values and schedules."""
 
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
+from gridtwin.fleet.device import apply_command
+from gridtwin.fleet.models import Command, DeviceState
 from gridtwin.planner.backtest import (
     backtest_day_schedules,
     lp_storm_schedule,
@@ -94,6 +98,35 @@ def test_member_card_text_is_derived_from_the_computed_reasons():
     ]
     calm = decide_reserve(StormSignals(p_spike=[0.0] * 16), BASE, CONFIG)
     assert member_card(calm, EVENING, 39.2, CONFIG) is None
+
+
+def test_a_command_carrying_the_dynamic_floor_is_enforced_by_the_device():
+    device = DeviceState(
+        device_id="battery-0",
+        soc_pct=0.65,
+        energy_kwh=39.2,
+        max_power_kw=10.0,
+        round_trip_efficiency=0.9,
+        reserve_floor_pct=BASE,
+    )
+    command = Command(
+        idempotency_key="run:t:battery-0:1",
+        run_id="run",
+        interval_start=EVENING,
+        device_id="battery-0",
+        seq=1,
+        setpoint_mw=0.01,
+        expires_at=EVENING + timedelta(minutes=15),
+        reserve_floor_pct=0.6,
+    )
+    after, ack = apply_command(device, command)
+    # Only the 5% above the 60% floor may go: 1.96 kWh in 15 min = 7.84 kW, not 10 kW.
+    assert ack.delivered_mw == pytest.approx(0.00784)
+    assert after.soc_pct == pytest.approx(0.6) and after.reserve_floor_pct == 0.6
+    assert not ack.floor_violation
+    # Already at the floor: nothing to give.
+    _, again = apply_command(after, command.model_copy(update={"idempotency_key": "k2"}))
+    assert again.delivered_mw == 0.0
 
 
 def evening_day() -> tuple[list[float], list[datetime], dict]:

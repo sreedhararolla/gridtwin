@@ -13,7 +13,7 @@ from temporalio.worker import Worker
 from gridtwin.chaos.models import FEED_SCENARIOS
 from gridtwin.chaos.script import ChaosScript, ChaosStep, select_window
 from gridtwin.chaos.slo import within_tolerance_pct
-from gridtwin.dispatch.activities import DispatchActivities
+from gridtwin.dispatch.activities import DispatchActivities, StormSignalsSource
 from gridtwin.dispatch.ladder import LEVELS, DegradationEvent, LadderConfig, degradation_timeline
 from gridtwin.dispatch.publish import NullPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunInput, ReplayRunWorkflow
@@ -22,6 +22,7 @@ from gridtwin.fleet.reallocate import ReallocationConfig
 from gridtwin.ledger.memory_repo import InMemoryLedgerRepo
 from gridtwin.ledger.models import IntervalResult, LedgerIntervalSummary
 from gridtwin.marketdata.prices import load_day_prices
+from gridtwin.storm.reserve import StormConfig
 from gridtwin.telemetry.repo import InMemoryTelemetryRepo
 from gridtwin.transport.memory import InMemoryTransport
 
@@ -55,6 +56,11 @@ class ScenarioReport(BaseModel):
     # `degradation_events` counts them.
     degradation_timeline: list[DegradationEvent] = []
     worst_level: str = "L0"
+    # Storm mode (ticket 14): the highest Reserve Floor dispatched on (0-100), and how many
+    # intervals it was raised. `reserve_violations` is judged against that dynamic floor:
+    # every Command carries it and the Devices check against it.
+    max_reserve_floor_pct: float = 0.0
+    raised_floor_intervals: int = 0
 
 
 class ScenarioResult(BaseModel):
@@ -153,11 +159,15 @@ async def run_scenario(
     telemetry_delay_pct: float = 0.3,
     ladder: LadderConfig | None = None,
     strategy: str = "naive",
+    storm: StormConfig | None = None,
+    storm_signals: StormSignalsSource | None = None,
 ) -> ScenarioResult:
     """`duplicate_commands` runs the whole replay under the duplicate-commands Chaos
     Scenario; `partial_send_failures` = n makes the first n Shard batches fail after a
     partial send, forcing Temporal to retry those dispatches. `script` replays a Chaos
-    Script's window and steps in-process (the same scenarios/*.yaml `make chaos` runs)."""
+    Script's window and steps in-process (the same scenarios/*.yaml `make chaos` runs).
+    `storm` turns on Storm mode, reading its signals from `storm_signals` (CI has no Risk
+    Curves or weather cached, so a scenario supplies them)."""
     repo = InMemoryLedgerRepo()
     telemetry = InMemoryTelemetryRepo()
     transport = InMemoryTransport(telemetry=telemetry, duplicates=duplicate_commands)
@@ -181,6 +191,7 @@ async def run_scenario(
         publisher=NullPublisher(),
         on_fleet_state=chaos,
         feed_faults=chaos.feed_faults,
+        storm_signals=storm_signals,
     )
 
     async with await WorkflowEnvironment.start_time_skipping(
@@ -207,6 +218,7 @@ async def run_scenario(
                 reallocation=reallocation or ReallocationConfig(tolerance_pct=tolerance_pct),
                 ladder=ladder or LadderConfig(),
                 strategy=strategy,
+                storm=storm or StormConfig(),
             )
             handle = await env.client.start_workflow(
                 ReplayRunWorkflow.run,
@@ -260,4 +272,6 @@ def build_report(results: list[IntervalResult], tolerance_pct: float) -> Scenari
         degradation_events=len(timeline),
         degradation_timeline=timeline,
         worst_level=max((r.level for r in results), key=LEVELS.index),
+        max_reserve_floor_pct=max(r.reserve_floor_pct for r in results),
+        raised_floor_intervals=sum(1 for r in results if r.reserve_reasons),
     )

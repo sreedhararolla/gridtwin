@@ -83,7 +83,10 @@ ALTER TABLE interval_results
     ADD COLUMN IF NOT EXISTS feed_detail TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS strategy TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS forecast_source TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS plan_mw DOUBLE PRECISION[] NOT NULL DEFAULT '{}';
+    ADD COLUMN IF NOT EXISTS plan_mw DOUBLE PRECISION[] NOT NULL DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS reserve_floor_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS reserve_reasons JSONB NOT NULL DEFAULT '[]',
+    ADD COLUMN IF NOT EXISTS member_card JSONB;
 
 -- Telemetry: the latest Heartbeat per Device per run, batched in by the ingester.
 CREATE TABLE IF NOT EXISTS device_telemetry (

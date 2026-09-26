@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from gridtwin.fleet.models import AckOutcome
+from gridtwin.storm.reserve import MemberCard, ReserveReason
 
 # A Command's lifecycle in the Command Ledger: issued -> acked / expired / failed.
 CommandStatus = Literal["issued", "acked", "expired", "failed"]
@@ -100,3 +101,8 @@ class IntervalResult(BaseModel, frozen=True):
     strategy: str = ""
     forecast_source: str = ""
     plan_mw: list[float] = []
+    # Storm mode (ticket 14): the Reserve Floor this interval dispatched on (0-100, 0 = not
+    # recorded), why it was raised, and the Member Card those reasons produce.
+    reserve_floor_pct: float = 0.0
+    reserve_reasons: list[ReserveReason] = []
+    member_card: MemberCard | None = None

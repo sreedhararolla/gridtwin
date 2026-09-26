@@ -181,6 +181,27 @@ def member_card(
     )
 
 
+class ReserveOutcome(BaseModel, frozen=True):
+    """A Reserve Decision and the Member Card it produces (None while the floor is at base)."""
+
+    decision: ReserveDecision
+    card: MemberCard | None = None
+
+
+def reserve_outcome(
+    signals: StormSignals,
+    base_floor_pct: float,
+    decision_time: datetime,
+    device_energy_kwh: float,
+    config: StormConfig,
+) -> ReserveOutcome:
+    decision = decide_reserve(signals, base_floor_pct, config)
+    return ReserveOutcome(
+        decision=decision,
+        card=member_card(decision, decision_time, device_energy_kwh, config),
+    )
+
+
 class StormTradeoff(BaseModel, frozen=True):
     """$ forgone vs backup hours gained, from the same backtest schedules."""
 

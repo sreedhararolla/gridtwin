@@ -3,6 +3,8 @@
 Every write is one connection and one `executemany` per batch, so a 100-device shard
 batch costs one round trip, not 100."""
 
+from psycopg.types.json import Jsonb
+
 from gridtwin.fleet.models import Ack, Command, DeviceState
 from gridtwin.ledger.db import get_conn
 from gridtwin.ledger.models import (
@@ -18,9 +20,18 @@ RESULT_COLUMNS = (
     "budget_ms, online_devices, shard_count, soc_p10_pct, soc_p50_pct, soc_p90_pct, "
     "duplicate_deliveries, duplicate_effects, retried_dispatches, planned_achievable_mw, "
     "stale_devices, unresponsive_devices, reallocation_rounds, reallocated_mw, "
-    "reallocated_devices, feed_status, feed_detail, strategy, forecast_source, plan_mw"
+    "reallocated_devices, feed_status, feed_detail, strategy, forecast_source, plan_mw, "
+    "reserve_floor_pct, reserve_reasons, member_card"
 )
 RESULT_FIELDS = [c.strip() for c in RESULT_COLUMNS.split(",")]
+JSON_FIELDS = {"reserve_reasons", "member_card"}
+
+
+def _column(result: IntervalResult, field: str) -> object:
+    if field in JSON_FIELDS:
+        dumped = result.model_dump(mode="json", include={field})[field]
+        return None if dumped is None else Jsonb(dumped)
+    return getattr(result, field)
 
 
 class PostgresLedgerRepo:
@@ -120,7 +131,7 @@ class PostgresLedgerRepo:
                     reallocated_mw = EXCLUDED.reallocated_mw,
                     reallocated_devices = EXCLUDED.reallocated_devices
                 """,
-                tuple(getattr(result, f) for f in RESULT_FIELDS),
+                tuple(_column(result, f) for f in RESULT_FIELDS),
             )
 
     def list_interval_results(self, run_id: str) -> list[IntervalResult]:

@@ -250,7 +250,10 @@ def lp_strategy(
     if p_spike is not None:
         horizon = expected_prices(horizon, p_spike, spike_premium_usd)
         holdback = holdback_values(p_spike, config)
-    schedule = solve(horizon, aggregate_of(fleet_state), config, end_value, holdback)
+    floors = [pct * fleet_state.capacity_mwh for pct in fleet_state.reserve_floor_by_interval_pct]
+    schedule = solve(
+        horizon, aggregate_of(fleet_state), config, end_value, holdback, floors or None
+    )
     target = schedule.target_mw[0]
     target = min(max(target, -fleet_state.charge_headroom_mw), fleet_state.discharge_headroom_mw)
     return FleetPlan(

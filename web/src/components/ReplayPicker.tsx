@@ -16,6 +16,7 @@ export function ReplayPicker({ onStarted }: { onStarted: (runId: string) => void
   const [days, setDays] = useState<CachedDay[]>([]);
   const [day, setDay] = useState<string>("");
   const [strategy, setStrategy] = useState<Strategy>("naive");
+  const [storm, setStorm] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +36,7 @@ export function ReplayPicker({ onStarted }: { onStarted: (runId: string) => void
     setStarting(true);
     setError(null);
     try {
-      const run = await startRun(day, strategy);
+      const run = await startRun(day, strategy, storm);
       onStarted(run.run_id);
     } catch {
       setError("Could not start the run");
@@ -77,6 +78,15 @@ export function ReplayPicker({ onStarted }: { onStarted: (runId: string) => void
           </option>
         ))}
       </select>
+      <label className="flex items-center gap-1 text-sm text-slate-400">
+        <input
+          type="checkbox"
+          checked={storm}
+          onChange={(e) => setStorm(e.target.checked)}
+          className="accent-emerald-400"
+        />
+        Storm mode (dynamic reserve)
+      </label>
       <button
         type="button"
         onClick={replay}

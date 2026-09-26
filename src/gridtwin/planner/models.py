@@ -17,6 +17,9 @@ class FleetState(BaseModel, frozen=True):
     floor_mwh: float = 0.0
     max_power_mw: float = 0.0
     round_trip_efficiency: float = 1.0
+    # Storm mode: the Dynamic Reserve Floor (0-1) for each upcoming interval, this one first
+    # (empty = the Devices' own floor throughout). The LP charges ahead of a rising floor.
+    reserve_floor_by_interval_pct: list[float] = []
 
 
 class LpConfig(BaseModel, frozen=True):

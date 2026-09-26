@@ -96,8 +96,12 @@ export async function fetchSlo(runId: string): Promise<SloReport> {
   return (await res.json()) as SloReport;
 }
 
-export async function startRun(day: string, strategy: Strategy): Promise<StartedRun> {
-  const body: components["schemas"]["StartRunRequest"] = { day, strategy };
+export async function startRun(
+  day: string,
+  strategy: Strategy,
+  storm = false,
+): Promise<StartedRun> {
+  const body: components["schemas"]["StartRunRequest"] = { day, strategy, storm };
   const res = await fetch(`${API_BASE_URL}/runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
