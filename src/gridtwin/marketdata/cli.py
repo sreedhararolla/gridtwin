@@ -3,6 +3,7 @@
 uv run python -m gridtwin.marketdata.cli ingest
 uv run python -m gridtwin.marketdata.cli audit
 uv run python -m gridtwin.marketdata.cli demo-days
+uv run python -m gridtwin.marketdata.cli backfill-rt-spp
 uv run python -m gridtwin.marketdata.cli seed-fixture-day
 """
 
@@ -15,6 +16,7 @@ from gridtwin.marketdata.demo_days import rank_cached_days
 from gridtwin.marketdata.fixture_seed import seed_fixture_day
 from gridtwin.marketdata.ingest import default_window, run_ingest
 from gridtwin.marketdata.registry import default_registry
+from gridtwin.marketdata.rtm_history import backfill_rt_spp
 from gridtwin.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -32,7 +34,11 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     default_start, default_end = default_window()
     start = args.start or default_start
     end = args.end or default_end
-    summary = run_ingest(default_registry(), start, end, include_pre_rtcb=args.include_pre_rtcb)
+    registry = default_registry()
+    if args.datasets:
+        wanted = {name.strip() for name in args.datasets.split(",") if name.strip()}
+        registry = [spec for spec in registry if spec.name in wanted]
+    summary = run_ingest(registry, start, end, include_pre_rtcb=args.include_pre_rtcb)
     print(
         f"fetched={summary.fetched} skipped_cached={summary.skipped_cached} "
         f"pending_credentials={summary.skipped_pending_credentials} errors={summary.errors}"
@@ -57,6 +63,12 @@ def cmd_demo_days(args: argparse.Namespace) -> None:
         print(f"  {stat.day}  spread=${stat.spread_usd_per_mwh:.2f}/MWh")
 
 
+def cmd_backfill_rt_spp(args: argparse.Namespace) -> None:
+    default_start, default_end = default_window()
+    written = backfill_rt_spp(args.start or default_start, args.end or default_end)
+    print(f"backfilled {written} rt_spp days from the yearly NP6-785-ER report")
+
+
 def cmd_seed_fixture_day(_args: argparse.Namespace) -> None:
     seed_fixture_day()
     print("seeded the ADR-007 fixture day into the rt_spp cache (source=fixture_seed)")
@@ -68,6 +80,9 @@ def main() -> None:
 
     ingest_parser = subparsers.add_parser("ingest")
     _add_window_args(ingest_parser)
+    ingest_parser.add_argument(
+        "--datasets", default="", help="comma-separated dataset names (default: all)"
+    )
     ingest_parser.set_defaults(func=cmd_ingest)
 
     audit_parser = subparsers.add_parser("audit")
@@ -78,6 +93,10 @@ def main() -> None:
     demo_days_parser.add_argument("--settlement-point", default=settings.settlement_point)
     demo_days_parser.add_argument("--top-n", type=int, default=10)
     demo_days_parser.set_defaults(func=cmd_demo_days)
+
+    backfill_parser = subparsers.add_parser("backfill-rt-spp")
+    _add_window_args(backfill_parser)
+    backfill_parser.set_defaults(func=cmd_backfill_rt_spp)
 
     seed_parser = subparsers.add_parser("seed-fixture-day")
     seed_parser.set_defaults(func=cmd_seed_fixture_day)

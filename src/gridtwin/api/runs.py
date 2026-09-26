@@ -2,15 +2,18 @@
 Live-tab stream (ADR-003: the browser connects straight to FastAPI, not through Next.js)."""
 
 import asyncio
+from datetime import date
 
 import nats
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from gridtwin.dispatch.publish import result_subject
 from gridtwin.ledger.models import IntervalResult
 from gridtwin.ledger.postgres_repo import PostgresLedgerRepo
+from gridtwin.marketdata.prices import DayNotCached
+from gridtwin.replay.cli import connect_temporal, start_replay_run
 from gridtwin.settings import settings
 
 router = APIRouter()
@@ -19,6 +22,27 @@ _repo = PostgresLedgerRepo()
 
 class LatestRun(BaseModel):
     run_id: str | None
+
+
+class StartRunRequest(BaseModel):
+    day: date | None = None  # a cached day (Central-time trading day); None = fixture day
+    settlement_point: str | None = None
+
+
+class StartedRun(BaseModel):
+    run_id: str
+
+
+@router.post("/runs", response_model=StartedRun)
+async def start_run(request: StartRunRequest) -> StartedRun:
+    """The Live tab's day picker: replay any cached day with the full fleet."""
+    try:
+        run_id = await start_replay_run(
+            await connect_temporal(), request.day, request.settlement_point
+        )
+    except DayNotCached as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return StartedRun(run_id=run_id)
 
 
 @router.get("/runs/latest", response_model=LatestRun)

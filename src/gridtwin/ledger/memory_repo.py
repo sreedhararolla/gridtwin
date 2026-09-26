@@ -20,19 +20,12 @@ class InMemoryLedgerRepo:
             bucket.setdefault(device.device_id, device)
         self._latest_run_id = run_id
 
-    def get_devices(self, run_id: str) -> list[DeviceState]:
-        return list(self._devices[run_id].values())
+    def upsert_commands(self, commands: list[Command]) -> None:
+        for command in commands:
+            self._commands.setdefault(command.idempotency_key, command)
 
-    def upsert_command(self, command: Command) -> None:
-        self._commands.setdefault(command.idempotency_key, command)
-
-    def record_ack(self, ack: Ack) -> None:
-        if ack.applied:
-            self._acked_keys.add(ack.idempotency_key)
-
-    def update_device_soc(self, run_id: str, device_id: str, soc_pct: float) -> None:
-        bucket = self._devices[run_id]
-        bucket[device_id] = bucket[device_id].model_copy(update={"soc_pct": soc_pct})
+    def record_acks(self, acks: list[Ack]) -> None:
+        self._acked_keys.update(ack.idempotency_key for ack in acks if ack.applied)
 
     def record_interval_result(self, result: IntervalResult) -> None:
         self._results[result.run_id][result.interval_start] = result

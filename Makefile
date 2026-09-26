@@ -36,7 +36,8 @@ types-check:
 demo:
 	docker compose up -d --build
 	uv run python scripts/wait_for_health.py
-	uv run python -m gridtwin.replay.cli
+	uv run python -m gridtwin.replay.cli $(if $(DAY),--day $(DAY),)
 
 data:
 	uv run python -m gridtwin.marketdata.cli ingest
+	uv run python -m gridtwin.marketdata.cli backfill-rt-spp

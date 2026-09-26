@@ -8,7 +8,8 @@ from gridtwin.fleet.models import DeviceState
 class FleetState(BaseModel, frozen=True):
     discharge_headroom_mw: float
     charge_headroom_mw: float
-    devices: list[DeviceState]
+    energy_above_floor_mwh: float = 0.0
+    devices: list[DeviceState]  # non-stale Devices only
 
 
 class FleetPlan(BaseModel, frozen=True):

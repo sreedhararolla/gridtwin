@@ -16,6 +16,7 @@ from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunWorkflo
 from gridtwin.ledger.db import init_schema, record_heartbeat
 from gridtwin.ledger.postgres_repo import PostgresLedgerRepo
 from gridtwin.settings import settings
+from gridtwin.telemetry.repo import PostgresTelemetryRepo
 from gridtwin.transport.nats_transport import NatsTransport
 
 SERVICE_NAME = "worker"
@@ -25,7 +26,7 @@ log = logging.getLogger(SERVICE_NAME)
 
 async def heartbeat_loop(instance_id: str) -> None:
     while True:
-        record_heartbeat(SERVICE_NAME, instance_id)
+        await asyncio.to_thread(record_heartbeat, SERVICE_NAME, instance_id)
         await asyncio.sleep(settings.heartbeat_interval_seconds)
 
 
@@ -41,7 +42,10 @@ async def main() -> None:
     transport = await NatsTransport.connect(settings.nats_url)
     publisher = await NatsResultPublisher.connect(settings.nats_url)
     activities = DispatchActivities(
-        repo=PostgresLedgerRepo(), transport=transport, publisher=publisher
+        repo=PostgresLedgerRepo(),
+        telemetry=PostgresTelemetryRepo(),
+        transport=transport,
+        publisher=publisher,
     )
     log.info("%s connected: temporal, postgres, nats", instance_id)
 
@@ -49,15 +53,9 @@ async def main() -> None:
         client,
         task_queue=settings.task_queue,
         workflows=[ReplayRunWorkflow, MarketIntervalWorkflow],
-        activities=[
-            activities.seed_devices,
-            activities.list_interval_starts,
-            activities.get_market_snapshot,
-            activities.get_fleet_state,
-            activities.build_plan,
-            activities.dispatch_shard,
-            activities.record_interval_result,
-        ],
+        activities=activities.all(),
+        # 20 shard activities per interval run concurrently across the two workers.
+        max_concurrent_activities=64,
     )
     await asyncio.gather(heartbeat_loop(instance_id), worker.run())
 

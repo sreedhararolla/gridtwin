@@ -1,65 +1,85 @@
-"""`make demo` entry point: starts one ReplayRunWorkflow against the fixture day."""
+"""`make demo [DAY=YYYY-MM-DD]` entry point: starts one ReplayRunWorkflow for any cached
+day (or, with no DAY, the checked-in fixture day). The API's `POST /runs` - the Live tab's
+day picker - uses the same `start_replay_run`."""
 
+import argparse
 import asyncio
 import logging
 import uuid
+from datetime import date
 
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 
 from gridtwin.dispatch.workflows import ReplayRunInput, ReplayRunWorkflow
-from gridtwin.fleet.models import DeviceState
+from gridtwin.marketdata.prices import load_day_prices
 from gridtwin.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("demo")
 
 
-def initial_devices() -> list[DeviceState]:
-    return [
-        DeviceState(
-            device_id=device_id,
-            soc_pct=settings.initial_soc_pct,
-            energy_kwh=settings.device_energy_kwh,
-            max_power_kw=settings.device_max_power_kw,
-            round_trip_efficiency=settings.device_round_trip_efficiency,
-            reserve_floor_pct=settings.reserve_floor_pct,
-        )
-        for device_id in settings.device_ids
-    ]
-
-
-async def start_demo_run() -> str:
-    run_id = f"demo-{uuid.uuid4().hex[:8]}"
-    client = await Client.connect(
-        settings.temporal_address,
-        namespace=settings.temporal_namespace,
-        data_converter=pydantic_data_converter,
-    )
-    run_input = ReplayRunInput(
+def build_run_input(run_id: str, day: date | None, settlement_point: str) -> ReplayRunInput:
+    return ReplayRunInput(
         run_id=run_id,
-        settlement_point=settings.settlement_point,
+        settlement_point=settlement_point,
+        day=day,
         fixture_path=settings.fixture_path,
-        shard_id=settings.shard_id,
-        devices=initial_devices(),
+        fleet=settings.fleet_config(),
         discharge_threshold_usd=settings.naive_discharge_threshold_usd,
         charge_threshold_usd=settings.naive_charge_threshold_usd,
         replay_speed=settings.replay_speed,
         dispatch_timeout_seconds=settings.dispatch_timeout_seconds,
+        stale_after_seconds=settings.stale_after_seconds,
     )
+
+
+async def connect_temporal() -> Client:
+    return await Client.connect(
+        settings.temporal_address,
+        namespace=settings.temporal_namespace,
+        data_converter=pydantic_data_converter,
+    )
+
+
+async def start_replay_run(
+    client: Client, day: date | None, settlement_point: str | None = None
+) -> str:
+    point = settlement_point or settings.settlement_point
+    # Fail fast (DayNotCached) before starting a workflow that could never load its day.
+    load_day_prices(point, day, settings.fixture_path)
+    suffix = day.isoformat() if day else "fixture"
+    run_id = f"demo-{suffix}-{uuid.uuid4().hex[:6]}"
     await client.start_workflow(
         ReplayRunWorkflow.run,
-        run_input,
+        build_run_input(run_id, day, point),
         id=f"replay:{run_id}",
         task_queue=settings.task_queue,
     )
-    log.info("started run %s", run_id)
+    return run_id
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(prog="gridtwin.replay")
+    parser.add_argument("--day", type=date.fromisoformat, default=None)
+    parser.add_argument("--settlement-point", default=settings.settlement_point)
+    args = parser.parse_args()
+
+    run_id = await start_replay_run(await connect_temporal(), args.day, args.settlement_point)
+    log.info(
+        "started run %s: %s at %s, %d devices in %d shards, %sx",
+        run_id,
+        args.day or "fixture day",
+        args.settlement_point,
+        settings.device_count,
+        settings.shard_count,
+        settings.replay_speed,
+    )
     log.info(
         "Temporal UI:  http://localhost:8080/namespaces/%s/workflows", settings.temporal_namespace
     )
     log.info("Dashboard:    http://localhost:3000/live?run=%s", run_id)
-    return run_id
 
 
 if __name__ == "__main__":
-    asyncio.run(start_demo_run())
+    asyncio.run(main())

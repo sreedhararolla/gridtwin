@@ -12,12 +12,19 @@ x-app-env: &app-env
   SETTLEMENT_POINT: LZ_HOUSTON
   FIXTURE_PATH: data/fixtures/rtm_spp_lz_houston_2025-12-10.csv
   REPLAY_SPEED: "60"
-  DEVICE_COUNT: "10"
+  SHARD_COUNT: "20"
+  DEVICE_COUNT: "2000"
   DEVICE_ENERGY_KWH: "39.2"
   DEVICE_MAX_POWER_KW: "10.0"
   DEVICE_ROUND_TRIP_EFFICIENCY: "0.9"
   RESERVE_FLOOR_PCT: "0.20"
   INITIAL_SOC_PCT: "0.50"
+  DEVICE_RESPONSE_NOISE_PCT: "0.02"
+  DEVICE_FAULT_RATE: "0.001"
+  FLEET_SEED: "42"
+  TELEMETRY_PERIOD_REPLAY_SECONDS: "60"
+  TELEMETRY_STALE_HEARTBEATS: "3"
+  TELEMETRY_FLUSH_SECONDS: "1.0"
   NAIVE_DISCHARGE_THRESHOLD_USD: "90.0"
   NAIVE_CHARGE_THRESHOLD_USD: "20.0"
   DISPATCH_TIMEOUT_SECONDS: "5.0"
@@ -80,6 +87,7 @@ services:
         condition: service_healthy
       temporal:
         condition: service_started
+    volumes: ["./data:/app/data:ro"]
     ports: ["8000:8000"]
 
   worker-a:
@@ -88,6 +96,7 @@ services:
     environment:
       <<: *app-env
       INSTANCE_ID: worker-a
+    volumes: ["./data:/app/data:ro"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,6 +109,7 @@ services:
     environment:
       <<: *app-env
       INSTANCE_ID: worker-b
+    volumes: ["./data:/app/data:ro"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,8 +122,7 @@ services:
     environment:
       <<: *app-env
       INSTANCE_ID: simulator-a
-      # Ticket 02 has one shard; ticket 04 spreads shards across both simulators.
-      SHARD_IDS: shard-0
+      SHARD_IDS: shard-0,shard-1,shard-2,shard-3,shard-4,shard-5,shard-6,shard-7,shard-8,shard-9
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,6 +135,19 @@ services:
     environment:
       <<: *app-env
       INSTANCE_ID: simulator-b
+      SHARD_IDS: shard-10,shard-11,shard-12,shard-13,shard-14,shard-15,shard-16,shard-17,shard-18,shard-19
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  telemetry:
+    build: .
+    command: ["python", "-m", "gridtwin.telemetry.main"]
+    environment:
+      <<: *app-env
+      INSTANCE_ID: telemetry
     depends_on:
       postgres:
         condition: service_healthy

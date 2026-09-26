@@ -5,6 +5,7 @@ from gridtwin.fleet.models import Ack, Command, DeviceState
 
 INTERVAL_HOURS = 0.25
 FLOOR_EPSILON = 1e-9
+MIN_HEADROOM_MW = 1e-6  # 1 W; Acks report delivered MW to 6 decimals
 
 
 def headroom_mw(state: DeviceState) -> tuple[float, float]:
@@ -13,7 +14,11 @@ def headroom_mw(state: DeviceState) -> tuple[float, float]:
     usable_kwh_to_full = max(state.energy_kwh * (1.0 - state.soc_pct), 0.0)
     discharge_mw = min(state.max_power_kw, usable_kwh_above_floor / INTERVAL_HOURS) / 1000.0
     charge_mw = min(state.max_power_kw, usable_kwh_to_full / INTERVAL_HOURS) / 1000.0
-    return discharge_mw, charge_mw
+    # Float dust left at the floor or at full is not dispatchable headroom.
+    return (
+        discharge_mw if discharge_mw >= MIN_HEADROOM_MW else 0.0,
+        charge_mw if charge_mw >= MIN_HEADROOM_MW else 0.0,
+    )
 
 
 def aggregate_headroom(devices: list[DeviceState]) -> tuple[float, float]:
@@ -27,10 +32,26 @@ def aggregate_headroom(devices: list[DeviceState]) -> tuple[float, float]:
     return discharge_total, charge_total
 
 
-def apply_command(state: DeviceState, command: Command) -> tuple[DeviceState, Ack]:
-    """Apply one Setpoint for one Market Interval and return the Device's new state and Ack."""
+def apply_command(
+    state: DeviceState, command: Command, response_factor: float = 1.0, faulted: bool = False
+) -> tuple[DeviceState, Ack]:
+    """Apply one Setpoint for one Market Interval and return the Device's new state and Ack.
+
+    `response_factor` is the device's response noise (delivered = setpoint x factor, still
+    capped at headroom so noise can never push SoC below the floor); `faulted` means the
+    device failed to act at all. Both are drawn by the (seeded) simulator, keeping this pure.
+    """
+    if faulted:
+        return state, Ack(
+            idempotency_key=command.idempotency_key,
+            device_id=state.device_id,
+            applied=False,
+            delivered_mw=0.0,
+            soc_pct_after=state.soc_pct,
+        )
+
     discharge_mw, charge_mw = headroom_mw(state)
-    setpoint_mw = command.setpoint_mw
+    setpoint_mw = command.setpoint_mw * max(response_factor, 0.0)
     soc_kwh = state.energy_kwh * state.soc_pct
 
     if setpoint_mw >= 0:
@@ -42,8 +63,10 @@ def apply_command(state: DeviceState, command: Command) -> tuple[DeviceState, Ac
         soc_kwh += charged_mw * 1000.0 * INTERVAL_HOURS * state.round_trip_efficiency
 
     raw_soc_pct = soc_kwh / state.energy_kwh
-    floor_violation = raw_soc_pct < state.reserve_floor_pct - FLOOR_EPSILON
-    new_soc_pct = min(max(raw_soc_pct, state.reserve_floor_pct), 1.0)
+    # A violation is *discharging* into the floor; a device already below it (and told to
+    # hold or charge) is not violating anything by existing.
+    floor_violation = delivered_mw > 0 and raw_soc_pct < state.reserve_floor_pct - FLOOR_EPSILON
+    new_soc_pct = min(max(raw_soc_pct, 0.0), 1.0)
 
     new_state = state.model_copy(update={"soc_pct": new_soc_pct})
     ack = Ack(

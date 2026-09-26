@@ -1,6 +1,9 @@
 """Seam A: the Scenario Runner. Runs a Replay Run in-process - Temporal's time-skipping
-test environment, the in-memory transport, an in-memory ledger - and returns a Scenario
+test environment, the in-memory transport, telemetry and ledger - and returns a Scenario
 Report, the system-level test seam (ADR-005, docs/SPEC.md Testing Decisions)."""
+
+from datetime import date
+from statistics import median
 
 from pydantic import BaseModel
 from temporalio.contrib.pydantic import pydantic_data_converter
@@ -10,9 +13,10 @@ from temporalio.worker import Worker
 from gridtwin.dispatch.activities import DispatchActivities
 from gridtwin.dispatch.publish import NullPublisher
 from gridtwin.dispatch.workflows import MarketIntervalWorkflow, ReplayRunInput, ReplayRunWorkflow
-from gridtwin.fleet.models import DeviceState
-from gridtwin.fleet.shard import ShardSimulator
+from gridtwin.fleet.models import FleetConfig
 from gridtwin.ledger.memory_repo import InMemoryLedgerRepo
+from gridtwin.ledger.models import IntervalResult
+from gridtwin.telemetry.repo import InMemoryTelemetryRepo
 from gridtwin.transport.memory import InMemoryTransport
 
 TASK_QUEUE = "scenario-runner"
@@ -29,24 +33,35 @@ class ScenarioReport(BaseModel):
     degradation_events: int = 0
     value_usd: float
     p99_dispatch_ms: float
+    median_dispatch_ms: float = 0.0
+    max_shards_per_interval: int = 0
+    min_online_devices: int = 0
+
+
+class ScenarioResult(BaseModel):
+    report: ScenarioReport
+    results: list[IntervalResult]
 
 
 async def run_scenario(
     run_id: str,
-    devices: list[DeviceState],
+    fleet: FleetConfig,
     settlement_point: str,
     fixture_path: str,
-    shard_id: str,
     discharge_threshold_usd: float,
     charge_threshold_usd: float,
     replay_speed: float,
     dispatch_timeout_seconds: float,
+    stale_after_seconds: float,
+    day: date | None = None,
     tolerance_pct: float = 0.05,
-) -> ScenarioReport:
+) -> ScenarioResult:
     repo = InMemoryLedgerRepo()
-    shard = ShardSimulator(devices)
-    transport = InMemoryTransport({shard_id: shard})
-    activities = DispatchActivities(repo=repo, transport=transport, publisher=NullPublisher())
+    telemetry = InMemoryTelemetryRepo()
+    transport = InMemoryTransport(telemetry=telemetry)
+    activities = DispatchActivities(
+        repo=repo, telemetry=telemetry, transport=transport, publisher=NullPublisher()
+    )
 
     async with await WorkflowEnvironment.start_time_skipping(
         data_converter=pydantic_data_converter
@@ -55,26 +70,19 @@ async def run_scenario(
             env.client,
             task_queue=TASK_QUEUE,
             workflows=[ReplayRunWorkflow, MarketIntervalWorkflow],
-            activities=[
-                activities.seed_devices,
-                activities.list_interval_starts,
-                activities.get_market_snapshot,
-                activities.get_fleet_state,
-                activities.build_plan,
-                activities.dispatch_shard,
-                activities.record_interval_result,
-            ],
+            activities=activities.all(),
         ):
             run_input = ReplayRunInput(
                 run_id=run_id,
                 settlement_point=settlement_point,
+                day=day,
                 fixture_path=fixture_path,
-                shard_id=shard_id,
-                devices=devices,
+                fleet=fleet,
                 discharge_threshold_usd=discharge_threshold_usd,
                 charge_threshold_usd=charge_threshold_usd,
                 replay_speed=replay_speed,
                 dispatch_timeout_seconds=dispatch_timeout_seconds,
+                stale_after_seconds=stale_after_seconds,
             )
             handle = await env.client.start_workflow(
                 ReplayRunWorkflow.run,
@@ -84,11 +92,11 @@ async def run_scenario(
             )
             await handle.result()
 
-    return _build_report(repo, run_id, tolerance_pct)
-
-
-def _build_report(repo: InMemoryLedgerRepo, run_id: str, tolerance_pct: float) -> ScenarioReport:
     results = repo.list_interval_results(run_id)
+    return ScenarioResult(report=build_report(results, tolerance_pct), results=results)
+
+
+def build_report(results: list[IntervalResult], tolerance_pct: float) -> ScenarioReport:
     if not results:
         return ScenarioReport(
             intervals=0,
@@ -115,4 +123,7 @@ def _build_report(repo: InMemoryLedgerRepo, run_id: str, tolerance_pct: float) -
         reserve_violations=sum(r.reserve_violations for r in results),
         value_usd=value_usd,
         p99_dispatch_ms=latencies[p99_index],
+        median_dispatch_ms=median(latencies),
+        max_shards_per_interval=max(r.shard_count for r in results),
+        min_online_devices=min(r.online_devices for r in results),
     )

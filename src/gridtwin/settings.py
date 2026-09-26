@@ -2,6 +2,9 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from gridtwin.fleet.models import FleetConfig
+from gridtwin.telemetry.staleness import stale_after_seconds
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -27,16 +30,24 @@ class Settings(BaseSettings):
     fixture_path: str = "data/fixtures/rtm_spp_lz_houston_2025-12-10.csv"
     replay_speed: float = 60.0
 
-    # The one shard ticket 02 dispatches to. Ticket 04 spreads many shards across
-    # simulator replicas; `shard_ids` (plural) is which of those a simulator hosts.
-    shard_id: str = "shard-0"
+    # The fleet: DEVICE_COUNT devices in SHARD_COUNT shards (shard-0..N-1), spread across
+    # simulator replicas; `shard_ids` is which of those shards one simulator hosts.
     shard_ids: str = ""
-    device_count: int = 10
+    shard_count: int = 20
+    device_count: int = 2000
     device_energy_kwh: float = 39.2
     device_max_power_kw: float = 10.0
     device_round_trip_efficiency: float = 0.9
     reserve_floor_pct: float = 0.20
     initial_soc_pct: float = 0.50
+    device_response_noise_pct: float = 0.02
+    device_fault_rate: float = 0.001
+    fleet_seed: int = 42
+
+    # Telemetry: one Heartbeat per replay-minute; stale after N missed Heartbeats.
+    telemetry_period_replay_seconds: float = 60.0
+    telemetry_stale_heartbeats: int = 3
+    telemetry_flush_seconds: float = 1.0
 
     naive_discharge_threshold_usd: float = 90.0
     naive_charge_threshold_usd: float = 20.0
@@ -67,8 +78,27 @@ class Settings(BaseSettings):
         return [shard.strip() for shard in self.shard_ids.split(",") if shard.strip()]
 
     @property
-    def device_ids(self) -> list[str]:
-        return [f"battery-{i}" for i in range(self.device_count)]
+    def stale_after_seconds(self) -> float:
+        return stale_after_seconds(
+            self.telemetry_period_replay_seconds,
+            self.replay_speed,
+            self.telemetry_stale_heartbeats,
+            self.telemetry_flush_seconds,
+        )
+
+    def fleet_config(self) -> FleetConfig:
+        return FleetConfig(
+            device_count=self.device_count,
+            shard_count=self.shard_count,
+            energy_kwh=self.device_energy_kwh,
+            max_power_kw=self.device_max_power_kw,
+            round_trip_efficiency=self.device_round_trip_efficiency,
+            reserve_floor_pct=self.reserve_floor_pct,
+            initial_soc_pct=self.initial_soc_pct,
+            response_noise_pct=self.device_response_noise_pct,
+            fault_rate=self.device_fault_rate,
+            seed=self.fleet_seed,
+        )
 
 
 settings = Settings()

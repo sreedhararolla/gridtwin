@@ -63,6 +63,29 @@ CREATE TABLE IF NOT EXISTS interval_results (
     created_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (run_id, interval_start)
 );
+ALTER TABLE interval_results
+    ADD COLUMN IF NOT EXISTS budget_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS online_devices INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS shard_count INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS soc_p10_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS soc_p50_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS soc_p90_pct DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+-- Telemetry: the latest Heartbeat per Device per run, batched in by the ingester.
+CREATE TABLE IF NOT EXISTS device_telemetry (
+    run_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    shard_id TEXT NOT NULL,
+    soc_pct DOUBLE PRECISION NOT NULL,
+    energy_kwh DOUBLE PRECISION NOT NULL,
+    max_power_kw DOUBLE PRECISION NOT NULL,
+    round_trip_efficiency DOUBLE PRECISION NOT NULL,
+    reserve_floor_pct DOUBLE PRECISION NOT NULL,
+    power_mw DOUBLE PRECISION NOT NULL,
+    healthy BOOLEAN NOT NULL,
+    sent_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (run_id, device_id)
+);
 """
 
 

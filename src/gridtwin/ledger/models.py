@@ -17,4 +17,10 @@ class IntervalResult(BaseModel, frozen=True):
     dispatched_count: int
     acked_count: int
     reserve_violations: int
-    latency_ms: float
+    latency_ms: float  # plan -> all shard acks, the interval's dispatch latency
+    budget_ms: float = 0.0  # the interval's wall budget: 900 s / replay speed
+    online_devices: int = 0  # non-stale Devices in Fleet State at decision time
+    shard_count: int = 0
+    soc_p10_pct: float = 0.0
+    soc_p50_pct: float = 0.0
+    soc_p90_pct: float = 0.0

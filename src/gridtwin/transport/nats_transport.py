@@ -7,11 +7,22 @@ import json
 import nats
 from nats.aio.client import Client as NatsClient
 
-from gridtwin.fleet.models import Ack, Command
+from gridtwin.fleet.models import Ack, Command, Heartbeat, ShardReset
 
 
 def shard_subject(shard_id: str) -> str:
     return f"dispatch.{shard_id}"
+
+
+def reset_subject(shard_id: str) -> str:
+    return f"control.{shard_id}.reset"
+
+
+def telemetry_subject(shard_id: str) -> str:
+    return f"telemetry.{shard_id}"
+
+
+TELEMETRY_WILDCARD = "telemetry.*"
 
 
 class NatsTransport:
@@ -22,6 +33,12 @@ class NatsTransport:
     async def connect(cls, url: str) -> NatsTransport:
         nc = await nats.connect(url)
         return cls(nc)
+
+    async def reset_shard(self, reset: ShardReset, timeout_seconds: float) -> list[Heartbeat]:
+        msg = await self._nc.request(
+            reset_subject(reset.shard_id), reset.model_dump_json().encode(), timeout=timeout_seconds
+        )
+        return [Heartbeat.model_validate(h) for h in json.loads(msg.data.decode())]
 
     async def send_batch(
         self, shard_id: str, commands: list[Command], timeout_seconds: float
