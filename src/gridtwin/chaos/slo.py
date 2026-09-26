@@ -78,6 +78,16 @@ def slo_rows(
             ok=violations == 0,
         ),
     ]
+    duplicate_effects = sum(r.duplicate_effects for r in results)
+    duplicate_deliveries = sum(r.duplicate_deliveries for r in results)
+    rows.append(
+        SloRow(
+            name="Duplicate effects",
+            target="0",
+            actual=f"{duplicate_effects} ({duplicate_deliveries} dup deliveries)",
+            ok=duplicate_effects == 0,
+        )
+    )
     if expected_intervals is not None:
         missed = max(expected_intervals - len(results), 0)
         rows.append(SloRow(name="Missed intervals", target="0", actual=str(missed), ok=missed == 0))

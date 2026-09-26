@@ -9,8 +9,17 @@ export type PricePoint = components["schemas"]["PricePoint"];
 export type StartedRun = components["schemas"]["StartedRun"];
 export type ChaosEvent = components["schemas"]["ChaosEvent"];
 export type SloReport = components["schemas"]["SloReport"];
+export type LedgerIntervalSummary = components["schemas"]["LedgerIntervalSummary"];
+export type ScenarioName = components["schemas"]["ApplyChaosRequest"]["scenario"];
 
-export async function applyChaos(runId: string, scenario: "worker-kill"): Promise<ChaosEvent> {
+export async function fetchLedger(runId: string): Promise<LedgerIntervalSummary[]> {
+  const res = await fetch(`${API_BASE_URL}/runs/${encodeURIComponent(runId)}/ledger`, {
+    cache: "no-store",
+  });
+  return (await res.json()) as LedgerIntervalSummary[];
+}
+
+export async function applyChaos(runId: string, scenario: ScenarioName): Promise<ChaosEvent> {
   const res = await fetch(`${API_BASE_URL}/chaos/apply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

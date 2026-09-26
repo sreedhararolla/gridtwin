@@ -1,0 +1,14 @@
+# Deliver every Command batch twice (and replay old batches) through the Jan 28, 2026
+# LZ_HOUSTON spike. Devices dedupe by Idempotency Key: deliveries climb, effects stay 0.
+# Run: make chaos SCENARIO=duplicates (about 3 minutes at 60x)
+name: duplicates
+description: Duplicate and replayed Command batches at the spike; duplicate effects must stay 0.
+settlement_point: LZ_HOUSTON
+fixture: data/fixtures/rtm_spp_lz_houston_2026-01-28.csv
+window:
+  from_interval: 24 # 6:00 AM CT, the run-up to the peak
+  intervals: 12 # through 9:00 AM CT
+steps:
+  - at_interval: 2 # 6:30 AM CT
+    apply: duplicate-commands
+    for_intervals: 8

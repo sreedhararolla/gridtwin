@@ -75,6 +75,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ledger
+         * @description The Command Ledger per Market Interval: issued / acked / expired / failed.
+         */
+        get: operations["get_ledger_runs__run_id__ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/events": {
         parameters: {
             query?: never;
@@ -202,9 +222,9 @@ export interface components {
         ApplyChaosRequest: {
             /**
              * Scenario
-             * @constant
+             * @enum {string}
              */
-            scenario: "worker-kill";
+            scenario: "worker-kill" | "duplicate-commands";
             /** Run Id */
             run_id: string;
             /** Target */
@@ -255,12 +275,15 @@ export interface components {
         ClearChaosRequest: {
             /**
              * Scenario
-             * @constant
+             * @enum {string}
              */
-            scenario: "worker-kill";
+            scenario: "worker-kill" | "duplicate-commands";
             /** Run Id */
             run_id: string;
-            /** Target */
+            /**
+             * Target
+             * @default simulators
+             */
             target: string;
         };
         /** DependencyStatus */
@@ -348,11 +371,49 @@ export interface components {
              * @default 0
              */
             soc_p90_pct: number;
+            /**
+             * Duplicate Deliveries
+             * @default 0
+             */
+            duplicate_deliveries: number;
+            /**
+             * Duplicate Effects
+             * @default 0
+             */
+            duplicate_effects: number;
+            /**
+             * Retried Dispatches
+             * @default 0
+             */
+            retried_dispatches: number;
         };
         /** LatestRun */
         LatestRun: {
             /** Run Id */
             run_id: string | null;
+        };
+        /**
+         * LedgerIntervalSummary
+         * @description The Command Ledger for one Market Interval: every Command issued, by status.
+         */
+        LedgerIntervalSummary: {
+            /**
+             * Interval Start
+             * Format: date-time
+             */
+            interval_start: string;
+            /** Issued */
+            issued: number;
+            /** Acked */
+            acked: number;
+            /** Expired */
+            expired: number;
+            /** Failed */
+            failed: number;
+            /** Unacked */
+            unacked: number;
+            /** Delivered Mw */
+            delivered_mw: number;
         };
         /** PricePoint */
         PricePoint: {
@@ -539,6 +600,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntervalResult"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ledger_runs__run_id__ledger_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerIntervalSummary"][];
                 };
             };
             /** @description Validation Error */

@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types demo data chaos
+.PHONY: setup up down logs check test test-e2e types demo data chaos ledger
 
 SCENARIO ?= worker-kill
 
@@ -45,6 +45,10 @@ demo:
 chaos:
 	uv run python scripts/wait_for_health.py
 	uv run python -m gridtwin.chaos.cli $(SCENARIO)
+
+# Command Ledger summary per interval (issued/acked/expired/failed): make ledger RUN=<run_id>
+ledger:
+	uv run python -m gridtwin.ledger.cli $(RUN)
 
 data:
 	uv run python -m gridtwin.marketdata.cli ingest

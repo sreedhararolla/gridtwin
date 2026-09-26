@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { applyChaos, type ChaosEvent, type SloReport } from "@/lib/api";
+import { applyChaos, type ChaosEvent, type ScenarioName, type SloReport } from "@/lib/api";
 
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", {
@@ -91,21 +91,24 @@ export function ChaosPanel({
   slo: SloReport | null;
   onApplied: () => void;
 }) {
-  const [arming, setArming] = useState(false);
+  const [arming, setArming] = useState<ScenarioName | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function killWorker() {
-    setArming(true);
+  async function apply(scenario: ScenarioName) {
+    setArming(scenario);
     setError(null);
     try {
-      await applyChaos(runId, "worker-kill");
+      await applyChaos(runId, scenario);
       onApplied();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Chaos apply failed");
     } finally {
-      setArming(false);
+      setArming(null);
     }
   }
+
+  const buttonClass =
+    "rounded border border-chaos/60 px-3 py-1 text-sm font-medium text-chaos hover:bg-chaos/10 disabled:opacity-50";
 
   return (
     <div className="grid gap-4 rounded border border-slate-800 bg-slate-900 p-4 md:grid-cols-2">
@@ -113,14 +116,27 @@ export function ChaosPanel({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={killWorker}
-            disabled={arming}
-            className="rounded border border-chaos/60 px-3 py-1 text-sm font-medium text-chaos hover:bg-chaos/10 disabled:opacity-50"
+            onClick={() => apply("worker-kill")}
+            disabled={arming !== null}
+            className={buttonClass}
           >
-            {arming ? "Waiting for a dispatch…" : "Kill worker"}
+            {arming === "worker-kill" ? "Waiting for a dispatch…" : "Kill worker"}
           </button>
           <span className="text-xs text-slate-500">
             Kills the worker running this run&apos;s next Shard dispatch; it restarts after a delay.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => apply("duplicate-commands")}
+            disabled={arming !== null}
+            className={buttonClass}
+          >
+            Duplicate commands
+          </button>
+          <span className="text-xs text-slate-500">
+            Simulators deliver every batch twice and replay old ones; devices dedupe by key.
           </span>
         </div>
         {error ? <span className="text-sm text-bad">{error}</span> : null}

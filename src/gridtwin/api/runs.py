@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from gridtwin.dispatch.publish import result_subject
-from gridtwin.ledger.models import IntervalResult
+from gridtwin.ledger.models import IntervalResult, LedgerIntervalSummary
 from gridtwin.ledger.postgres_repo import PostgresLedgerRepo
 from gridtwin.marketdata.prices import DayNotCached
 from gridtwin.replay.cli import connect_temporal, start_replay_run
@@ -53,6 +53,12 @@ async def get_latest_run() -> LatestRun:
 @router.get("/runs/{run_id}/results", response_model=list[IntervalResult])
 async def get_results(run_id: str) -> list[IntervalResult]:
     return await asyncio.to_thread(_repo.list_interval_results, run_id)
+
+
+@router.get("/runs/{run_id}/ledger", response_model=list[LedgerIntervalSummary])
+async def get_ledger(run_id: str) -> list[LedgerIntervalSummary]:
+    """The Command Ledger per Market Interval: issued / acked / expired / failed."""
+    return await asyncio.to_thread(_repo.ledger_summary, run_id)
 
 
 @router.get("/runs/{run_id}/events")

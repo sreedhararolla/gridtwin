@@ -57,6 +57,7 @@ def test_slo_table_passes_a_clean_recovery():
     assert [(r.name, r.actual, r.ok) for r in rows] == [
         ("Within tolerance", "100.0 %", True),
         ("Reserve violations", "0", True),
+        ("Duplicate effects", "0 (0 dup deliveries)", True),
         ("Missed intervals", "0", True),
         ("Recovery time", "4.0 s", True),
     ]
@@ -65,8 +66,17 @@ def test_slo_table_passes_a_clean_recovery():
 def test_slo_table_flags_misses():
     recoveries = recovery_times([kill()], {INTERVAL: KILLED_AT + timedelta(seconds=40)})
     rows = slo_rows([result(20.0, 10.0, violations=2)], recoveries, 0.05, 15.0, 3)
-    assert [r.ok for r in rows] == [False, False, False, False]
-    assert rows[2].actual == "2"
+    assert [r.ok for r in rows] == [False, False, True, False, False]
+    assert rows[3].actual == "2"
+
+
+def test_duplicate_deliveries_pass_duplicate_effects_fail():
+    delivered_twice = result(20.0, 20.0).model_copy(update={"duplicate_deliveries": 2000})
+    [row] = [r for r in slo_rows([delivered_twice], [], 0.05, 15.0) if r.name.startswith("Dup")]
+    assert (row.actual, row.ok) == ("0 (2000 dup deliveries)", True)
+    acted_twice = delivered_twice.model_copy(update={"duplicate_effects": 1})
+    [row] = [r for r in slo_rows([acted_twice], [], 0.05, 15.0) if r.name.startswith("Dup")]
+    assert not row.ok
 
 
 def test_watt_level_rounding_is_within_tolerance():

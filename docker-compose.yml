@@ -160,6 +160,8 @@ services:
         condition: service_healthy
       temporal:
         condition: service_started
+      nats:  # duplicate-commands is a broadcast to the simulators
+        condition: service_healthy
 
   telemetry:
     build: .
