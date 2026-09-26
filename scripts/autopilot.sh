@@ -28,11 +28,19 @@ and apply its "Autopilot mode" section: never wait for a human; park the ticket 
 Work on exactly ONE ticket, write .autopilot/status.json as described there, then end the session.
 P
 
+# Git Bash on Windows has no tz database, so TZ=America/Chicago silently yields UTC.
+ct_now() {
+  if command -v powershell >/dev/null 2>&1; then
+    powershell -NoProfile -Command "[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow,'Central Standard Time').ToString('yyyy-MM-dd HH:mm')" | tr -d '\r'
+  else
+    TZ=America/Chicago date '+%Y-%m-%d %H:%M'
+  fi
+}
 field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$STATE/status.json" 2>/dev/null | head -1; }
 n=0; fails=0; parked=0
 while :; do
   [ -f "$STATE/STOP" ] && { rm -f "$STATE/STOP"; echo "■ STOP file found; stopping."; break; }
-  now="$(TZ=America/Chicago date '+%Y-%m-%d %H:%M')"
+  now="$(ct_now)"
   [[ "$now" > "$DEADLINE" ]] && { echo "■ Deadline $DEADLINE CT reached; not starting new tickets."; break; }
   [ "$n" -ge "$MAX_TICKETS" ] && { echo "■ Max tickets ($MAX_TICKETS) reached."; break; }
 
