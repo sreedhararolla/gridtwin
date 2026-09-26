@@ -35,7 +35,7 @@ async def main() -> int:
     print("\nSLO                  target            actual")
     for row in outcome.slo:
         mark = "PASS" if row.ok else "FAIL"
-        print(f"  {row.name:<19}{row.target:<18}{row.actual:<16}{mark}")
+        print(f"  {row.name:<19}{row.target:<18}{row.actual:<30}{mark}")
     for r in outcome.retries[:1]:
         print(f"\nTemporal UI: http://localhost:8080/namespaces/default/workflows/{r.workflow_id}")
     return 0 if outcome.slos_met else 1

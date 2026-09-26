@@ -25,6 +25,8 @@ Use these nouns in code, commits, UI labels and the video. If a new concept appe
 | **Idempotency Key** | `run_id:interval_start:device_id:seq`. `seq` increments only on reallocation. |
 | **Ack** | A Device's reply: key, applied or ignored, delivered MW. |
 | **Command Ledger** | Postgres record of every Command's lifecycle: issued → acked / expired / failed. |
+| **Ledger Summary** | The Command Ledger for one interval: Commands issued, acked, expired, failed. |
+| **Batch Reply** | A Shard's answer to a Command batch: its Acks plus duplicate-delivery/effect counts. |
 | **Delivered MW** | Sum of acked delivered power in an interval. |
 | **Shortfall** | Achievable Target − Delivered MW. |
 | **Reallocation** | Re-issuing Shortfall to Devices with Headroom within the interval (`seq+1`). |

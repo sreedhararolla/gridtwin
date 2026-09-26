@@ -111,9 +111,14 @@ def get_conn():
         yield conn
 
 
+SCHEMA_LOCK_ID = 60_2026  # every service runs init_schema at boot; one at a time
+
+
 def init_schema() -> None:
+    # Concurrent ALTER TABLEs from services booting together deadlock; the advisory lock
+    # serializes them (the multi-statement script runs as one implicit transaction).
     with get_conn() as conn:
-        conn.execute(SCHEMA)
+        conn.execute(f"SELECT pg_advisory_xact_lock({SCHEMA_LOCK_ID});\n{SCHEMA}")
 
 
 def record_heartbeat(service_name: str, instance_id: str) -> None:

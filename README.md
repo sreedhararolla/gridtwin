@@ -51,6 +51,12 @@ until the interrupted interval's result is recorded. In the Temporal UI, open th
 interval's workflow and look for a `dispatch_shard` activity whose started event shows
 `attempt: 2` and `identity: worker-b` (or `worker-a`).
 
+Press **Duplicate commands** to make every simulator deliver each Command batch twice and
+sometimes replay an old batch. Devices dedupe by Idempotency Key, so the **Duplicate
+deliveries** counter climbs while **Duplicate effects** stays at 0. The **Command Ledger**
+panel shows any interval's Commands issued, acked, expired and failed; from a terminal,
+`make ledger RUN=<run_id>` prints the same summary (omit `RUN` for the latest run).
+
 > **Local demos only.** The `chaos` service mounts `/var/run/docker.sock` so that it can
 > kill and restart containers. That gives it root-equivalent control of the host's Docker
 > daemon. Never run it anywhere except your own machine.
@@ -59,7 +65,8 @@ interval's workflow and look for a `dispatch_shard` activity whose started event
 
 ```
 make chaos SCENARIO=worker-kill   # replays a scripted scenario, prints its Scenario Report
-make test-e2e                     # the same scenario as a compose-mode test with SLO asserts
+make chaos SCENARIO=duplicates    # duplicate + replayed batches: effects must stay 0
+make test-e2e                     # the same scenarios as compose-mode tests with SLO asserts
 ```
 
 Both need the stack running (`make up`). `make chaos` exits non-zero if any SLO is missed.
@@ -77,7 +84,7 @@ window:
   intervals: 24                   # optional; default to the end of the day
 steps:
   - at_interval: 4                # index into the window
-    apply: worker-kill            # the Chaos Scenario; tickets 06-08 add more
+    apply: worker-kill            # the Chaos Scenario: worker-kill | duplicate-commands
     for_intervals: 2              # cleared (worker restarted) after n intervals of wall time
     target: worker-a              # optional; default the worker running the dispatch
 ```
