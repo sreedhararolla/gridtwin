@@ -132,6 +132,24 @@ def test_shard_reset_replaces_devices_and_heartbeats_carry_run_and_shard():
     assert {hb.state.shard_id for hb in beats} == {"shard-1"}
 
 
+def test_shard_ignores_commands_from_a_run_that_no_longer_owns_it():
+    shard = ShardSimulator()
+    devices = build_fleet(CONFIG)["shard-0"]
+    shard.reset(
+        ShardReset(
+            run_id="new-run",
+            shard_id="shard-0",
+            devices=devices,
+            response_noise_pct=0,
+            fault_rate=0,
+            seed=1,
+        )
+    )
+    [ack] = shard.handle_batch([command(devices[0].device_id, 0.005)])  # run_id="run"
+    assert ack.applied is False
+    assert shard.snapshot()[0] == devices[0]
+
+
 def test_ingester_buffer_keeps_only_the_newest_heartbeat_per_device():
     device = build_fleet(CONFIG)["shard-0"][0]
     buffer = LatestHeartbeats()

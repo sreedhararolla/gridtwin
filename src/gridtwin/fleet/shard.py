@@ -15,9 +15,11 @@ from gridtwin.fleet.models import Ack, Command, DeviceState, Heartbeat, ShardRes
 
 
 class ShardSimulator:
-    def __init__(self, devices: list[DeviceState] | None = None, run_id: str = "") -> None:
-        self._run_id = run_id
-        self._devices: dict[str, DeviceState] = {d.device_id: d for d in devices or []}
+    """Empty until `reset` hands it a run's Devices."""
+
+    def __init__(self) -> None:
+        self._run_id = ""
+        self._devices: dict[str, DeviceState] = {}
         self._power_mw: dict[str, float] = {}
         self._noise_pct = 0.0
         self._fault_rate = 0.0
@@ -37,7 +39,9 @@ class ShardSimulator:
         acks = []
         for command in commands:
             state = self._devices.get(command.device_id)
-            if state is None:
+            # A newer run has taken over this shard: the old run's Commands must not act
+            # on the new run's Devices.
+            if state is None or command.run_id != self._run_id:
                 acks.append(
                     Ack(
                         idempotency_key=command.idempotency_key,
