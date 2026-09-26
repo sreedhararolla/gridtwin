@@ -30,7 +30,10 @@ async def check_postgres() -> DependencyStatus:
 
 async def check_nats() -> DependencyStatus:
     try:
-        nc = await nats.connect(settings.nats_url, connect_timeout=TIMEOUT_SECONDS)
+        nc = await asyncio.wait_for(
+            nats.connect(settings.nats_url, allow_reconnect=False),
+            timeout=TIMEOUT_SECONDS,
+        )
         await nc.close()
         return DependencyStatus(name="nats", ok=True)
     except Exception as exc:  # noqa: BLE001
