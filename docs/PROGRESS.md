@@ -13,7 +13,7 @@
 | 07 | Device dropout, stale telemetry, reallocation | P0 | 05 | done | #8 | Sat 11:58 |
 | 08 | Feed failure + degradation ladder | P1 | 05 | done | #9 | Sat 07:50 |
 | 09 | LP planner + strategy backtest | P0 | 04 | done | #10 | Sat 08:32 |
-| 10 | Scarcity-risk model | P1 | 09 | todo | #11 | |
+| 10 | Scarcity-risk model | P1 | 09 | done | #11 | Sat 15:52 |
 | 11 | Insights: what most people miss | P0 | 03 | todo | #12 | |
 | 12 | Scale + benchmarks | P2 | 06, 07 | todo | #13 | |
 | 13 | Demo scenario, README, submission | P0 | 05, 06, 07, 09, 11 | todo | #14 | |
