@@ -109,6 +109,29 @@ def test_duplicate_mode_delivers_twice_with_no_second_effect():
     assert dup.snapshot() == plain.snapshot()  # same SoC as a clean delivery
 
 
+def test_key_memory_stays_bounded_over_a_long_run():
+    sim = shard()
+    for k in range(200):
+        t = T0 + timedelta(minutes=15 * k)
+        sim.handle_batch([command(t, device_id=d) for d in ("battery-0", "battery-1")])
+    assert len(sim._acks) == 4  # two intervals x two Devices, not 400
+    assert len(sim._received) == 4
+
+
+def test_key_older_than_the_window_is_expired_and_never_acts_twice():
+    sim = shard()
+    first = command(T0)
+    sim.handle_batch([first])
+    # The Device sits out T1 (nothing for it), the fleet moves on to T2.
+    sim.handle_batch([command(T0 + timedelta(minutes=30), device_id="battery-1")])
+    before = soc(sim)
+    reply = sim.handle_batch([first])  # a very late redelivery of an applied key
+    assert reply.acks[0].outcome == "expired"
+    assert not reply.acks[0].applied
+    assert soc(sim) == before
+    assert reply.duplicate_effects == 0
+
+
 def test_reset_forgets_keys_of_the_previous_run():
     sim = shard()
     sim.handle_batch([command(T0)])

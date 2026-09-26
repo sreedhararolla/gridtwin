@@ -57,8 +57,9 @@ async def main() -> None:
         task_queue=settings.task_queue,
         workflows=[ReplayRunWorkflow, MarketIntervalWorkflow],
         activities=activities.all(),
-        # 20 shard activities per interval run concurrently across the two workers.
-        max_concurrent_activities=64,
+        # Every Shard's activity of an interval runs concurrently across the two workers
+        # (20 in compose; `make bench` tunes it with the fleet size).
+        max_concurrent_activities=settings.worker_max_concurrent_activities,
         # The chaos controller maps Temporal's worker identity to the container to kill,
         # and Temporal history shows which worker ran each attempt.
         identity=instance_id,

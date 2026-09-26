@@ -1,4 +1,4 @@
-.PHONY: setup up down logs check test test-e2e types demo demo-full data chaos ledger backtest train insights
+.PHONY: setup up down logs check test test-e2e types demo demo-full data chaos ledger backtest train insights bench
 
 SCENARIO ?= worker-kill
 
@@ -75,3 +75,21 @@ backtest:
 # Insights tab, plus the same numbers as CSV (and the heatmap as SVG) in data/cache/insights/.
 insights:
 	uv run python -X utf8 -m gridtwin.insights.report
+
+# Scale benchmark matrix (1k/5k/10k/20k devices, worker kill, planner, 30-minute memory
+# soak) on its own infra (docker-compose.bench.yml), then BENCHMARKS.md. About 50 minutes;
+# BENCH_SIZES / BENCH_SOAK_MINUTES shorten it. The demo stack can stay up.
+BENCH_POSTGRES_PORT ?= 25432
+BENCH_NATS_PORT ?= 24222
+BENCH_TEMPORAL_PORT ?= 27233
+BENCH_PORTS = BENCH_POSTGRES_PORT=$(BENCH_POSTGRES_PORT) BENCH_NATS_PORT=$(BENCH_NATS_PORT) BENCH_TEMPORAL_PORT=$(BENCH_TEMPORAL_PORT)
+BENCH_COMPOSE = docker compose -p gridtwin-bench -f docker-compose.yml -f docker-compose.bench.yml
+
+bench:
+	$(BENCH_PORTS) $(BENCH_COMPOSE) up -d --wait postgres nats
+	$(BENCH_PORTS) $(BENCH_COMPOSE) up -d temporal
+	POSTGRES_DSN=postgresql://gridtwin:gridtwin@localhost:$(BENCH_POSTGRES_PORT)/gridtwin \
+	NATS_URL=nats://localhost:$(BENCH_NATS_PORT) \
+	TEMPORAL_ADDRESS=localhost:$(BENCH_TEMPORAL_PORT) \
+	TASK_QUEUE=gridtwin-bench \
+		uv run python -X utf8 -m gridtwin.bench.cli

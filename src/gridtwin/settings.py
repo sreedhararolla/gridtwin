@@ -103,6 +103,30 @@ class Settings(BaseSettings):
     chaos_telemetry_delay_seconds: float = 10.0
     chaos_telemetry_delay_pct: float = 0.30
 
+    # Ticket 12: tuning and backpressure. Dispatch activities one worker runs at once, and
+    # the bound on every NATS subscription's pending queue in the simulators and the
+    # telemetry ingester (beyond it NATS drops messages: a slow consumer sheds load
+    # instead of growing without limit; the next Heartbeat supersedes a dropped one).
+    worker_max_concurrent_activities: int = 64
+    nats_pending_msgs_limit: int = 10_000
+    nats_pending_bytes_mb: int = 64
+    # `make bench`: fleet sizes, devices per Shard (the Command batch size), Shards per
+    # simulator process, Market Intervals per size, the interval whose dispatch a worker
+    # kill interrupts, the bisection step and run length when a size does not hold, and
+    # the memory soak.
+    bench_sizes: str = "1000,5000,10000,20000"
+    bench_devices_per_shard: int = 250
+    bench_shards_per_simulator: int = 20
+    bench_intervals: int = 12
+    bench_kill_at_interval: int = 4
+    bench_probe_resolution: int = 2500
+    bench_probe_intervals: int = 6
+    bench_soak_minutes: float = 30.0
+    bench_memory_sample_seconds: float = 15.0
+    bench_memory_warmup_seconds: float = 180.0
+    bench_memory_max_growth_pct: float = 10.0
+    bench_output: str = "BENCHMARKS.md"
+
     # Ticket 03 appends the market data ingest settings below this line.
     marketdata_cache_dir: str = "data/cache"
     marketdata_start_date: str = "2025-12-05"
@@ -125,6 +149,10 @@ class Settings(BaseSettings):
     @property
     def shard_id_list(self) -> list[str]:
         return [shard.strip() for shard in self.shard_ids.split(",") if shard.strip()]
+
+    @property
+    def bench_size_list(self) -> list[int]:
+        return [int(size) for size in self.bench_sizes.split(",") if size.strip()]
 
     @property
     def stale_after_seconds(self) -> float:

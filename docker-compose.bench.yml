@@ -1,0 +1,15 @@
+# `make bench` infra: layered on docker-compose.yml under its own project name
+# (gridtwin-bench), starting only postgres, nats and temporal on their own host ports, so
+# a benchmark never shares a task queue, NATS subjects or tables with the demo stack.
+# The bench runs workers, simulators and the telemetry ingester as host processes.
+services:
+  postgres:
+    ports: !override ["${BENCH_POSTGRES_PORT:-25432}:5432"]
+    volumes: !override ["benchpg:/var/lib/postgresql/data"]
+  nats:
+    ports: !override ["${BENCH_NATS_PORT:-24222}:4222"]
+  temporal:
+    ports: !override ["${BENCH_TEMPORAL_PORT:-27233}:7233"]
+
+volumes:
+  benchpg:
